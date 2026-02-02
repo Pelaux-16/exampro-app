@@ -1,24 +1,16 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-
-// Helper functions for localStorage
-const loadDataFromStorage = (key, initialData) => {
-  try {
-    const stored = localStorage.getItem(key);
-    return stored ? JSON.parse(stored) : initialData;
-  } catch (error) {
-    console.error(`Error loading ${key} from localStorage:`, error);
-    return initialData;
-  }
-};
-
-const saveDataToStorage = (key, data) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(data));
-  } catch (error) {
-    console.error(`Error saving ${key} to localStorage:`, error);
-  }
-};
+import { db } from './firebase';
+import { 
+  collection, 
+  getDocs, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc,
+  setDoc,
+  getDoc
+} from 'firebase/firestore';
 
 // Mock data initialization with admin password set to 1234
 const initialExams = [
@@ -97,6 +89,30 @@ const initialResults = [
   }
 ];
 
+// Save data to Firebase
+const saveToFirebase = async (collectionName, data) => {
+  try {
+    await setDoc(doc(db, collectionName, 'data'), { items: data });
+  } catch (error) {
+    console.error(`Error saving ${collectionName} to Firebase:`, error);
+  }
+};
+
+// Load data from Firebase
+const loadFromFirebase = async (collectionName, defaultData) => {
+  try {
+    const docSnap = await getDoc(doc(db, collectionName, 'data'));
+    if (docSnap.exists() && docSnap.data().items) {
+      return docSnap.data().items;
+    } else {
+      return defaultData;
+    }
+  } catch (error) {
+    console.error(`Error loading ${collectionName} from Firebase:`, error);
+    return defaultData;
+  }
+};
+
 export default function App() {
   // Authentication state
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -131,12 +147,15 @@ export default function App() {
   const [userToDelete, setUserToDelete] = useState(null);
   const [isEditingGroup, setIsEditingGroup] = useState(false); // Track if editing or creating group
 
-  // Data states - Load from localStorage or use initial data
-  const [exams, setExams] = useState(() => loadDataFromStorage('exampro_exams', initialExams));
-  const [groups, setGroups] = useState(() => loadDataFromStorage('exampro_groups', initialGroups));
-  const [users, setUsers] = useState(() => loadDataFromStorage('exampro_users', initialUsers));
-  const [habilitations, setHabilitations] = useState(() => loadDataFromStorage('exampro_habilitations', initialHabilitations));
-  const [results, setResults] = useState(() => loadDataFromStorage('exampro_results', initialResults));
+  // Data states - Load from Firebase
+  const [exams, setExams] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [habilitations, setHabilitations] = useState([]);
+  const [results, setResults] = useState([]);
+
+  // Loading state
+  const [isLoading, setIsLoading] = useState(true);
 
   // Form inputs
   const [groupName, setGroupName] = useState('');
@@ -191,26 +210,28 @@ export default function App() {
   const [examSubmitted, setExamSubmitted] = useState(false);
   const [showScoreForSubmittedExam, setShowScoreForSubmittedExam] = useState(false);
 
-  // Save data to localStorage whenever it changes
+  // Load data from Firebase on component mount
   useEffect(() => {
-    saveDataToStorage('exampro_exams', exams);
-  }, [exams]);
-
-  useEffect(() => {
-    saveDataToStorage('exampro_groups', groups);
-  }, [groups]);
-
-  useEffect(() => {
-    saveDataToStorage('exampro_users', users);
-  }, [users]);
-
-  useEffect(() => {
-    saveDataToStorage('exampro_habilitations', habilitations);
-  }, [habilitations]);
-
-  useEffect(() => {
-    saveDataToStorage('exampro_results', results);
-  }, [results]);
+    const loadData = async () => {
+      setIsLoading(true);
+      
+      const loadedExams = await loadFromFirebase('exams', initialExams);
+      const loadedGroups = await loadFromFirebase('groups', initialGroups);
+      const loadedUsers = await loadFromFirebase('users', initialUsers);
+      const loadedHabilitations = await loadFromFirebase('habilitations', initialHabilitations);
+      const loadedResults = await loadFromFirebase('results', initialResults);
+      
+      setExams(loadedExams);
+      setGroups(loadedGroups);
+      setUsers(loadedUsers);
+      setHabilitations(loadedHabilitations);
+      setResults(loadedResults);
+      
+      setIsLoading(false);
+    };
+    
+    loadData();
+  }, []);
 
   // Handle login
   const handleLogin = (role) => {
@@ -257,7 +278,7 @@ export default function App() {
   };
 
   // Create or Edit group
-  const handleCreateGroup = () => {
+  const handleCreateGroup = async () => {
     if (groupName.trim() === '') {
       alert('El nombre del grupo no puede estar vacío');
       return;
@@ -271,6 +292,7 @@ export default function App() {
           : g
       );
       setGroups(updatedGroups);
+      await saveToFirebase('groups', updatedGroups);
       alert('Grupo actualizado exitosamente');
     } else {
       // Create new group
@@ -280,6 +302,7 @@ export default function App() {
         members: groupMembers
       };
       setGroups([...groups, newGroup]);
+      await saveToFirebase('groups', [...groups, newGroup]);
       alert('Grupo creado exitosamente');
     }
 
@@ -345,7 +368,7 @@ export default function App() {
   };
 
   // Create exam with questions
-  const handleCreateExam = () => {
+  const handleCreateExam = async () => {
     if (examName.trim() === '') {
       alert('El nombre del examen es obligatorio');
       return;
@@ -379,6 +402,7 @@ export default function App() {
       }))
     };
     setExams([...exams, newExam]);
+    await saveToFirebase('exams', [...exams, newExam]);
     setExamName('');
     setExamDescription('');
     setExamQuestions([{
@@ -396,7 +420,7 @@ export default function App() {
   };
 
   // Edit exam
-  const handleEditExam = () => {
+  const handleEditExam = async () => {
     if (!editingExam) return;
     if (examName.trim() === '') {
       alert('El nombre del examen es obligatorio');
@@ -435,13 +459,14 @@ export default function App() {
         : exam
     );
     setExams(updatedExams);
+    await saveToFirebase('exams', updatedExams);
     setShowEditExam(false);
     setEditingExam(null);
     alert('Examen actualizado exitosamente');
   };
 
   // Update admin account (username and password)
-  const handleUpdateAccount = () => {
+  const handleUpdateAccount = async () => {
     if (currentPassword !== currentUser.password) {
       alert('La contraseña actual es incorrecta');
       return;
@@ -472,6 +497,7 @@ export default function App() {
     // Update current user
     const updatedUser = updatedUsers.find(u => u.dni === (newUsername.trim() !== '' ? newUsername.trim() : currentUser.dni));
     setUsers(updatedUsers);
+    await saveToFirebase('users', updatedUsers);
     setCurrentUser(updatedUser);
     // Update login credentials if changed
     if (newUsername.trim() !== '') {
@@ -488,7 +514,7 @@ export default function App() {
   };
 
   // Change password for current user
-  const handleChangePassword = () => {
+  const handleChangePassword = async () => {
     if (currentPassword !== currentUser.password) {
       alert('La contraseña actual es incorrecta');
       return;
@@ -503,6 +529,7 @@ export default function App() {
         : user
     );
     setUsers(updatedUsers);
+    await saveToFirebase('users', updatedUsers);
     setCurrentPassword('');
     setNewPassword('');
     setShowChangePassword(false);
@@ -510,7 +537,7 @@ export default function App() {
   };
 
   // Edit user
-  const handleEditUser = () => {
+  const handleEditUser = async () => {
     if (!editingUser) return;
     // Validate DNI uniqueness if changed
     if (editDni !== editingUser.dni) {
@@ -536,13 +563,14 @@ export default function App() {
       return user;
     });
     setUsers(updatedUsers);
+    await saveToFirebase('users', updatedUsers);
     setShowEditUser(false);
     setEditingUser(null);
     alert('Usuario actualizado exitosamente');
   };
 
   // Delete user
-  const handleDeleteUser = () => {
+  const handleDeleteUser = async () => {
     if (!userToDelete) return;
     
     // Prevent deleting the current user
@@ -566,6 +594,11 @@ export default function App() {
     setUsers(updatedUsers);
     setGroups(updatedGroups);
     setResults(updatedResults);
+    
+    await saveToFirebase('users', updatedUsers);
+    await saveToFirebase('groups', updatedGroups);
+    await saveToFirebase('results', updatedResults);
+    
     setShowDeleteUserModal(false);
     setUserToDelete(null);
     alert('Usuario eliminado exitosamente');
@@ -586,7 +619,7 @@ export default function App() {
   };
 
   // Habilitar examen
-  const handleHabilitar = () => {
+  const handleHabilitar = async () => {
     if (!selectedExam || !selectedGroup) {
       alert('Selecciona un examen y un grupo');
       return;
@@ -597,12 +630,14 @@ export default function App() {
       alert('Esta habilitación ya existe');
       return;
     }
-    setHabilitations([...habilitations, {
+    const newHabilitation = {
       id: habilitations.length > 0 ? Math.max(...habilitations.map(h => h.id)) + 1 : 1,
       examId,
       groupId,
       showScore
-    }]);
+    };
+    setHabilitations([...habilitations, newHabilitation]);
+    await saveToFirebase('habilitations', [...habilitations, newHabilitation]);
     setSelectedExam('');
     setSelectedGroup('');
     setShowHabilitar(false);
@@ -616,9 +651,11 @@ export default function App() {
   };
 
   // Delete habilitation
-  const handleDeleteHabilitacion = () => {
+  const handleDeleteHabilitacion = async () => {
     if (habilitationToDelete) {
-      setHabilitations(habilitations.filter(h => h.id !== habilitationToDelete));
+      const updatedHabilitations = habilitations.filter(h => h.id !== habilitationToDelete);
+      setHabilitations(updatedHabilitations);
+      await saveToFirebase('habilitations', updatedHabilitations);
       setShowDeleteHabilitacionModal(false);
       setHabilitationToDelete(null);
       alert('Habilitación eliminada exitosamente');
@@ -626,7 +663,7 @@ export default function App() {
   };
 
   // Register new student (pending approval)
-  const handleRegister = () => {
+  const handleRegister = async () => {
     if (!registerDni || !registerPass || !registerName || !registerLastName) {
       alert('Todos los campos son obligatorios');
       return;
@@ -644,6 +681,7 @@ export default function App() {
       status: 'pending' // Requires admin approval
     };
     setUsers([...users, newStudent]);
+    await saveToFirebase('users', [...users, newStudent]);
     setRegisterName('');
     setRegisterLastName('');
     setRegisterDni('');
@@ -671,7 +709,7 @@ export default function App() {
   };
 
   // Submit exam
-  const handleSubmitExam = () => {
+  const handleSubmitExam = async () => {
     if (Object.keys(studentAnswers).length !== currentExam.questions.length) {
       alert('Debe responder todas las preguntas');
       return;
@@ -697,86 +735,121 @@ export default function App() {
       showScore: examHabilitation?.showScore || false
     };
     setResults([...results, newResult]);
+    await saveToFirebase('results', [...results, newResult]);
     setExamSubmitted(true);
   };
 
-  // Export results to CSV - IMPROVED VERSION WITH PROPER ENCODING
-  // Export results to CSV - FIXED VERSION
-const exportResults = () => {
-  // Filter results by exam
-  let filteredResults = [...results];
-  if (selectedResultExam !== 'all') {
-    const examIdNum = parseInt(selectedResultExam);
-    filteredResults = filteredResults.filter(r => r.examId === examIdNum);
-  }
-  // Filter results by group
-  if (selectedResultGroup !== 'all') {
-    const groupIdNum = parseInt(selectedResultGroup);
-    filteredResults = filteredResults.filter(r => {
-      const student = users.find(u => u.dni === r.studentDni);
-      return student && student.groupIds.includes(groupIdNum);
-    });
-  }
-  if (filteredResults.length === 0) {
-    alert('No hay resultados para exportar');
-    return;
-  }
-  // Get headers
-  const headers = ['Estudiante', 'Examen', 'Puntaje', 'Fecha'];
-  // Get all unique question IDs from filtered exams
-  const questionIds = [...new Set(filteredResults.flatMap(result => {
-    const exam = exams.find(e => e.id === result.examId);
-    return exam ? exam.questions.map(q => q.id) : [];
-  }))];
-  // Add question headers
-  const questionHeaders = questionIds.map(qId => `Pregunta ${qId}`);
-  const fullHeaders = [...headers, ...questionHeaders, 'Respuestas Correctas', 'Respuestas Incorrectas'];
-  // Build rows
-  const rows = filteredResults.map(result => {
-    const student = users.find(u => u.dni === result.studentDni);
-    const exam = exams.find(e => e.id === result.examId);
-    // Get answers for each question
-    const answerColumns = questionIds.map(qId => {
-      const question = exam.questions.find(q => q.id === qId);
-      const selectedOptionId = result.answers[qId];
-      const selectedOption = question.options.find(o => o.id === selectedOptionId);
-      const isCorrect = selectedOptionId === question.correctOptionId;
-      return `${selectedOption?.text || 'No respondida'}${isCorrect ? ' (✓)' : ' (✗)'}`;
-    });
-    // Count correct and incorrect answers
-    let correctCount = 0;
-    let incorrectCount = 0;
-    if (exam) {
-      exam.questions.forEach(question => {
-        if (result.answers[question.id] === question.correctOptionId) {
-          correctCount++;
-        } else {
-          incorrectCount++;
-        }
+  // Export results to CSV - FINAL CORRECTED VERSION
+  const exportResults = () => {
+    // Filter results by exam
+    let filteredResults = [...results];
+    if (selectedResultExam !== 'all') {
+      const examIdNum = parseInt(selectedResultExam);
+      filteredResults = filteredResults.filter(r => r.examId === examIdNum);
+    }
+    // Filter results by group
+    if (selectedResultGroup !== 'all') {
+      const groupIdNum = parseInt(selectedResultGroup);
+      filteredResults = filteredResults.filter(r => {
+        const student = users.find(u => u.dni === r.studentDni);
+        return student && student.groupIds.includes(groupIdNum);
       });
     }
-    return [
-      student?.name || result.studentDni,
-      exam?.name || `Examen ${result.examId}`,
-      `${result.score}/${result.total}`,
-      result.date,
-      ...answerColumns,
-      correctCount,
-      incorrectCount
-    ].join(',');
-  });
-  const csvContent = [fullHeaders.join(','), ...rows].join('\n');
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', 'resultados_examenes.csv');
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  alert(`Se exportaron ${filteredResults.length} resultados exitosamente`);
-};
+    if (filteredResults.length === 0) {
+      alert('No hay resultados para exportar');
+      return;
+    }
+    
+    // Helper function to escape CSV fields
+    const escapeCsvField = (field) => {
+      if (typeof field === 'string' && (field.includes(',') || field.includes('"'))) {
+        return `"${field.replace(/"/g, '""')}"`;
+      }
+      return field;
+    };
+    
+    // Get headers
+    const headers = ['Estudiante', 'Examen', 'Puntaje', 'Fecha'];
+    
+    // Get all unique question IDs from filtered exams
+    const questionIds = [...new Set(filteredResults.flatMap(result => {
+      const exam = exams.find(e => e.id === result.examId);
+      return exam ? exam.questions.map(q => q.id) : [];
+    }))];
+    
+    // Add question headers with sequential numbers
+    const questionHeaders = questionIds.map((qId, index) => `Pregunta ${index + 1}`);
+    const fullHeaders = [
+      ...headers, 
+      ...questionHeaders, 
+      'Respuestas Correctas', 
+      'Respuestas Incorrectas',
+      '',
+      'Nota'
+    ];
+    
+    // Build rows
+    const rows = filteredResults.map(result => {
+      const student = users.find(u => u.dni === result.studentDni);
+      const exam = exams.find(e => e.id === result.examId);
+      
+      // Get answers for each question
+      const answerColumns = questionIds.map(qId => {
+        const question = exam.questions.find(q => q.id === qId);
+        const selectedOptionId = result.answers[qId];
+        const selectedOption = question.options.find(o => o.id === selectedOptionId);
+        const isCorrect = selectedOptionId === question.correctOptionId;
+        
+        return `${selectedOption?.text || 'No respondida'}${isCorrect ? ' ✓' : ' ✗'}`;
+      });
+      
+      // Count correct and incorrect answers
+      let correctCount = 0;
+      let incorrectCount = 0;
+      if (exam) {
+        exam.questions.forEach(question => {
+          if (result.answers[question.id] === question.correctOptionId) {
+            correctCount++;
+          } else {
+            incorrectCount++;
+          }
+        });
+      }
+      
+      return [
+        student?.name || result.studentDni,
+        exam?.name || `Examen ${result.examId}`,
+        `${result.score}/${result.total}`,
+        result.date,
+        ...answerColumns,
+        correctCount,
+        incorrectCount,
+        '',
+        result.score
+      ];
+    });
+    
+    // Join headers and rows with semicolon (;) as delimiter
+    const csvContent = '\ufeff' + [
+      fullHeaders.join(';'),
+      ...rows.map(row => row.map(cell => 
+        typeof cell === 'string' && cell.includes(';') 
+          ? `"${cell.replace(/"/g, '""')}"`
+          : cell
+      ).join(';'))
+    ].join('\r\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'resultados_examenes.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    alert(`Se exportaron ${filteredResults.length} resultados exitosamente`);
+  };
 
   // Student dashboard - get available exams
   const getAvailableExams = () => {
@@ -794,6 +867,19 @@ const exportResults = () => {
       )
     );
   };
+
+  // Loading screen
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-4xl mb-4">⏳</div>
+          <h2 className="text-2xl font-bold text-gray-800">Cargando datos...</h2>
+          <p className="text-gray-600 mt-2">Por favor espera un momento</p>
+        </div>
+      </div>
+    );
+  }
 
   // Admin sidebar navigation
   const renderAdminSidebar = () => (
@@ -1153,6 +1239,8 @@ const exportResults = () => {
                             );
                             setGroups(updatedGroups);
                             setUsers(updatedUsers);
+                            saveToFirebase('groups', updatedGroups);
+                            saveToFirebase('users', updatedUsers);
                             alert('Grupo eliminado exitosamente');
                           }
                         }}
@@ -1758,6 +1846,7 @@ const exportResults = () => {
                             return user;
                           });
                           setUsers(updatedUsers);
+                          saveToFirebase('users', updatedUsers);
                           setShowApproveModal(false);
                           setEditingUser(null);
                           setEditGroups([]);
