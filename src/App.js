@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { db } from './firebase';
-import { 
-  collection, 
-  getDocs, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
+import {
+  collection,
+  getDocs,
+  addDoc,
+  updateDoc,
+  deleteDoc,
   doc,
   setDoc,
   getDoc
@@ -143,9 +143,11 @@ export default function App() {
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showDeleteHabilitacionModal, setShowDeleteHabilitacionModal] = useState(false);
   const [showDeleteUserModal, setShowDeleteUserModal] = useState(false);
+  const [showDeleteExamModal, setShowDeleteExamModal] = useState(false);
   const [habilitationToDelete, setHabilitationToDelete] = useState(null);
   const [userToDelete, setUserToDelete] = useState(null);
-  const [isEditingGroup, setIsEditingGroup] = useState(false); // Track if editing or creating group
+  const [examToDelete, setExamToDelete] = useState(null);
+  const [isEditingGroup, setIsEditingGroup] = useState(false);
 
   // Data states - Load from Firebase
   const [exams, setExams] = useState([]);
@@ -159,7 +161,7 @@ export default function App() {
 
   // Form inputs
   const [groupName, setGroupName] = useState('');
-  const [groupMembers, setGroupMembers] = useState([]); // Track selected members for group
+  const [groupMembers, setGroupMembers] = useState([]);
   const [examName, setExamName] = useState('');
   const [examDescription, setExamDescription] = useState('');
   const [selectedExam, setSelectedExam] = useState('');
@@ -209,6 +211,7 @@ export default function App() {
   const [studentAnswers, setStudentAnswers] = useState({});
   const [examSubmitted, setExamSubmitted] = useState(false);
   const [showScoreForSubmittedExam, setShowScoreForSubmittedExam] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Load data from Firebase on component mount
   useEffect(() => {
@@ -258,7 +261,6 @@ export default function App() {
       setCurrentUser(user);
       setCurrentPage(role === 'admin' ? 'admin' : 'student');
       setAdminSection('exams');
-      // Reset login fields
       setAdminUser('');
       setAdminPass('');
       setStudentDni('');
@@ -285,7 +287,6 @@ export default function App() {
     }
 
     if (isEditingGroup && editingExam) {
-      // Edit existing group
       const updatedGroups = groups.map(g =>
         g.id === editingExam.id
           ? { ...g, name: groupName, members: groupMembers }
@@ -295,7 +296,6 @@ export default function App() {
       await saveToFirebase('groups', updatedGroups);
       alert('Grupo actualizado exitosamente');
     } else {
-      // Create new group
       const newGroup = {
         id: groups.length > 0 ? Math.max(...groups.map(g => g.id)) + 1 : 1,
         name: groupName,
@@ -373,7 +373,6 @@ export default function App() {
       alert('El nombre del examen es obligatorio');
       return;
     }
-    // Validate questions
     for (const question of examQuestions) {
       if (question.text.trim() === '') {
         alert('Todas las preguntas deben tener texto');
@@ -416,6 +415,8 @@ export default function App() {
       correctOptionId: null
     }]);
     setShowCreateExam(false);
+    setShowEditExam(false);
+    setEditingExam(null);
     alert('Examen creado exitosamente');
   };
 
@@ -426,7 +427,6 @@ export default function App() {
       alert('El nombre del examen es obligatorio');
       return;
     }
-    // Validate questions
     for (const question of examQuestions) {
       if (question.text.trim() === '') {
         alert('Todas las preguntas deben tener texto');
@@ -465,7 +465,7 @@ export default function App() {
     alert('Examen actualizado exitosamente');
   };
 
-  // Update admin account (username and password)
+  // Update admin account
   const handleUpdateAccount = async () => {
     if (currentPassword !== currentUser.password) {
       alert('La contraseña actual es incorrecta');
@@ -475,7 +475,6 @@ export default function App() {
       alert('Debe ingresar al menos un nuevo usuario o contraseña');
       return;
     }
-    // Check if new username is already taken (excluding current user)
     if (newUsername.trim() !== '' && newUsername !== currentUser.dni) {
       const existingUser = users.find(u => u.dni === newUsername.trim() && u.dni !== currentUser.dni);
       if (existingUser) {
@@ -483,7 +482,6 @@ export default function App() {
         return;
       }
     }
-    // Update user data
     const updatedUsers = users.map(user => {
       if (user.dni === currentUser.dni) {
         return {
@@ -494,12 +492,10 @@ export default function App() {
       }
       return user;
     });
-    // Update current user
     const updatedUser = updatedUsers.find(u => u.dni === (newUsername.trim() !== '' ? newUsername.trim() : currentUser.dni));
     setUsers(updatedUsers);
     await saveToFirebase('users', updatedUsers);
     setCurrentUser(updatedUser);
-    // Update login credentials if changed
     if (newUsername.trim() !== '') {
       setAdminUser(newUsername.trim());
     }
@@ -513,7 +509,7 @@ export default function App() {
     alert('Datos de cuenta actualizados exitosamente');
   };
 
-  // Change password for current user
+  // Change password
   const handleChangePassword = async () => {
     if (currentPassword !== currentUser.password) {
       alert('La contraseña actual es incorrecta');
@@ -539,7 +535,6 @@ export default function App() {
   // Edit user
   const handleEditUser = async () => {
     if (!editingUser) return;
-    // Validate DNI uniqueness if changed
     if (editDni !== editingUser.dni) {
       const existingUser = users.find(u => u.dni === editDni && u.dni !== editingUser.dni);
       if (existingUser) {
@@ -547,7 +542,6 @@ export default function App() {
         return;
       }
     }
-    // Update user data
     const updatedUsers = users.map(user => {
       if (user.dni === editingUser.dni) {
         return {
@@ -572,23 +566,17 @@ export default function App() {
   // Delete user
   const handleDeleteUser = async () => {
     if (!userToDelete) return;
-    
-    // Prevent deleting the current user
     if (userToDelete.dni === currentUser?.dni) {
       alert('No puedes eliminar tu propia cuenta mientras estás conectado');
       return;
     }
 
-    // Remove user from all groups
     const updatedGroups = groups.map(group => ({
       ...group,
       members: group.members.filter(memberDni => memberDni !== userToDelete.dni)
     }));
 
-    // Remove user's results
     const updatedResults = results.filter(result => result.studentDni !== userToDelete.dni);
-
-    // Remove user
     const updatedUsers = users.filter(user => user.dni !== userToDelete.dni);
 
     setUsers(updatedUsers);
@@ -604,7 +592,7 @@ export default function App() {
     alert('Usuario eliminado exitosamente');
   };
 
-  // Approve student registration
+  // Approve student
   const handleApproveStudent = (dni) => {
     const student = users.find(u => u.dni === dni);
     if (!student) return;
@@ -644,13 +632,12 @@ export default function App() {
     alert('Examen habilitado exitosamente para el grupo seleccionado');
   };
 
-  // Delete habilitation confirmation
+  // Delete habilitation
   const confirmDeleteHabilitacion = (habilitationId) => {
     setHabilitationToDelete(habilitationId);
     setShowDeleteHabilitacionModal(true);
   };
 
-  // Delete habilitation
   const handleDeleteHabilitacion = async () => {
     if (habilitationToDelete) {
       const updatedHabilitations = habilitations.filter(h => h.id !== habilitationToDelete);
@@ -662,7 +649,7 @@ export default function App() {
     }
   };
 
-  // Register new student (pending approval)
+  // Register new student
   const handleRegister = async () => {
     if (!registerDni || !registerPass || !registerName || !registerLastName) {
       alert('Todos los campos son obligatorios');
@@ -678,7 +665,7 @@ export default function App() {
       name: `${registerName} ${registerLastName}`,
       role: 'student',
       groupIds: [],
-      status: 'pending' // Requires admin approval
+      status: 'pending'
     };
     setUsers([...users, newStudent]);
     await saveToFirebase('users', [...users, newStudent]);
@@ -700,7 +687,6 @@ export default function App() {
     setCurrentExam(exam);
     setStudentAnswers({});
     setExamSubmitted(false);
-    // Check if score should be shown for this exam
     const examHabilitation = habilitations.find(h =>
       h.examId === examId &&
       currentUser.groupIds.includes(h.groupId)
@@ -710,44 +696,106 @@ export default function App() {
 
   // Submit exam
   const handleSubmitExam = async () => {
-    if (Object.keys(studentAnswers).length !== currentExam.questions.length) {
-      alert('Debe responder todas las preguntas');
+    if (isSubmitting) {
+      alert('Enviando examen, por favor espera...');
       return;
     }
-    let score = 0;
-    currentExam.questions.forEach(question => {
-      if (studentAnswers[question.id] === question.correctOptionId) {
-        score += 1;
-      }
-    });
-    // Store the showScore setting at the time of submission
-    const examHabilitation = habilitations.find(h =>
-      h.examId === currentExam.id &&
-      currentUser.groupIds.includes(h.groupId)
+    
+    if (examSubmitted) {
+      alert('Este examen ya fue enviado. No se pueden modificar las respuestas.');
+      return;
+    }
+
+    const existingResult = results.find(r => 
+      r.studentDni === currentUser.dni && 
+      r.examId === currentExam.id
     );
-    const newResult = {
-      studentDni: currentUser.dni,
-      examId: currentExam.id,
-      score: score * 10 / currentExam.questions.length,
-      total: 10,
-      date: new Date().toISOString().split('T')[0],
-      answers: { ...studentAnswers },
-      showScore: examHabilitation?.showScore || false
-    };
-    setResults([...results, newResult]);
-    await saveToFirebase('results', [...results, newResult]);
-    setExamSubmitted(true);
+    
+    if (existingResult) {
+      alert('Ya has enviado este examen anteriormente. No se permiten reenvíos.');
+      setExamSubmitted(true);
+      return;
+    }
+
+    if (Object.keys(studentAnswers).length !== currentExam.questions.length) {
+      alert('Debe responder todas las preguntas antes de enviar.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      let score = 0;
+      currentExam.questions.forEach(question => {
+        if (studentAnswers[question.id] === question.correctOptionId) {
+          score += 1;
+        }
+      });
+
+      const examHabilitation = habilitations.find(h =>
+        h.examId === currentExam.id &&
+        currentUser.groupIds.includes(h.groupId)
+      );
+
+      const newResult = {
+        studentDni: currentUser.dni,
+        examId: currentExam.id,
+        score: score * 10 / currentExam.questions.length,
+        total: 10,
+        date: new Date().toISOString().split('T')[0],
+        answers: { ...studentAnswers },
+        showScore: examHabilitation?.showScore || false
+      };
+
+      const updatedResults = [...results, newResult];
+      setResults(updatedResults);
+      await saveToFirebase('results', updatedResults);
+
+      setExamSubmitted(true);
+      setShowScoreForSubmittedExam(examHabilitation?.showScore || false);
+      
+    } catch (error) {
+      console.error('Error submitting exam:', error);
+      alert('Error al enviar el examen. Por favor, intenta nuevamente.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  // Export results to CSV - FINAL CORRECTED VERSION
+  // Delete exam confirmation
+  const confirmDeleteExam = (examId) => {
+    setExamToDelete(examId);
+    setShowDeleteExamModal(true);
+  };
+
+  // Delete exam
+  const handleDeleteExam = async () => {
+    if (!examToDelete) return;
+
+    const updatedExams = exams.filter(e => e.id !== examToDelete);
+    const updatedHabilitations = habilitations.filter(h => h.examId !== examToDelete);
+    const updatedResults = results.filter(r => r.examId !== examToDelete);
+
+    setExams(updatedExams);
+    setHabilitations(updatedHabilitations);
+    setResults(updatedResults);
+    
+    await saveToFirebase('exams', updatedExams);
+    await saveToFirebase('habilitations', updatedHabilitations);
+    await saveToFirebase('results', updatedResults);
+    
+    setShowDeleteExamModal(false);
+    setExamToDelete(null);
+    alert('Examen eliminado exitosamente');
+  };
+
+  // Export results to CSV
   const exportResults = () => {
-    // Filter results by exam
     let filteredResults = [...results];
     if (selectedResultExam !== 'all') {
       const examIdNum = parseInt(selectedResultExam);
       filteredResults = filteredResults.filter(r => r.examId === examIdNum);
     }
-    // Filter results by group
     if (selectedResultGroup !== 'all') {
       const groupIdNum = parseInt(selectedResultGroup);
       filteredResults = filteredResults.filter(r => {
@@ -760,24 +808,12 @@ export default function App() {
       return;
     }
     
-    // Helper function to escape CSV fields
-    const escapeCsvField = (field) => {
-      if (typeof field === 'string' && (field.includes(',') || field.includes('"'))) {
-        return `"${field.replace(/"/g, '""')}"`;
-      }
-      return field;
-    };
-    
-    // Get headers
     const headers = ['Estudiante', 'Examen', 'Puntaje', 'Fecha'];
-    
-    // Get all unique question IDs from filtered exams
     const questionIds = [...new Set(filteredResults.flatMap(result => {
       const exam = exams.find(e => e.id === result.examId);
       return exam ? exam.questions.map(q => q.id) : [];
     }))];
     
-    // Add question headers with sequential numbers
     const questionHeaders = questionIds.map((qId, index) => `Pregunta ${index + 1}`);
     const fullHeaders = [
       ...headers, 
@@ -788,12 +824,10 @@ export default function App() {
       'Nota'
     ];
     
-    // Build rows
     const rows = filteredResults.map(result => {
       const student = users.find(u => u.dni === result.studentDni);
       const exam = exams.find(e => e.id === result.examId);
       
-      // Get answers for each question
       const answerColumns = questionIds.map(qId => {
         const question = exam.questions.find(q => q.id === qId);
         const selectedOptionId = result.answers[qId];
@@ -803,7 +837,6 @@ export default function App() {
         return `${selectedOption?.text || 'No respondida'}${isCorrect ? ' ✓' : ' ✗'}`;
       });
       
-      // Count correct and incorrect answers
       let correctCount = 0;
       let incorrectCount = 0;
       if (exam) {
@@ -829,7 +862,6 @@ export default function App() {
       ];
     });
     
-    // Join headers and rows with semicolon (;) as delimiter
     const csvContent = '\ufeff' + [
       fullHeaders.join(';'),
       ...rows.map(row => row.map(cell => 
@@ -856,12 +888,10 @@ export default function App() {
     if (!currentUser?.groupIds || currentUser.groupIds.length === 0) return [];
     
     return exams.filter(exam =>
-      // Check if exam is enabled for any of the student's groups
       habilitations.some(h =>
         h.examId === exam.id &&
         currentUser.groupIds.includes(h.groupId)
       ) && 
-      // Check if student hasn't taken this exam yet
       !results.some(r =>
         r.studentDni === currentUser.dni && r.examId === exam.id
       )
@@ -980,25 +1010,37 @@ export default function App() {
                         <p className="text-gray-600 mt-1 text-sm">{exam.description}</p>
                       )}
                     </div>
-                    <motion.button
-                      onClick={() => {
-                        setExamName(exam.name);
-                        setExamDescription(exam.description || '');
-                        setExamQuestions(exam.questions.map(q => ({
-                          id: q.id,
-                          text: q.text,
-                          options: q.options.map(o => ({ id: o.id, text: o.text })),
-                          correctOptionId: q.correctOptionId
-                        })));
-                        setEditingExam(exam);
-                        setShowEditExam(true);
-                      }}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      className="text-blue-500 hover:text-blue-700"
-                    >
-                      ✏️
-                    </motion.button>
+                    <div className="flex space-x-2">
+                      <motion.button
+                        onClick={() => {
+                          setExamName(exam.name);
+                          setExamDescription(exam.description || '');
+                          setExamQuestions(exam.questions.map(q => ({
+                            id: q.id,
+                            text: q.text,
+                            options: q.options.map(o => ({ id: o.id, text: o.text })),
+                            correctOptionId: q.correctOptionId
+                          })));
+                          setEditingExam(exam);
+                          setShowEditExam(true);
+                        }}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="text-blue-500 hover:text-blue-700"
+                        title="Editar examen"
+                      >
+                        ✏️
+                      </motion.button>
+                      <motion.button
+                        onClick={() => confirmDeleteExam(exam.id)}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="text-red-500 hover:text-red-700"
+                        title="Eliminar examen"
+                      >
+                        🗑️
+                      </motion.button>
+                    </div>
                   </div>
                   <div className="mt-4 pt-4 border-t border-gray-100">
                     <div className="flex justify-between text-sm text-gray-500">
@@ -1163,6 +1205,59 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {/* Delete Exam Modal */}
+            {showDeleteExamModal && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold text-gray-800">Eliminar Examen</h3>
+                    <button onClick={() => {
+                      setShowDeleteExamModal(false);
+                      setExamToDelete(null);
+                    }} className="text-gray-500 hover:text-gray-700">
+                      ✕
+                    </button>
+                  </div>
+                  <div className="space-y-4">
+                    <p className="text-gray-700">
+                      ¿Estás seguro de que deseas eliminar este examen?<br />
+                      <span className="text-red-600 font-medium">Esta acción no se puede deshacer.</span>
+                    </p>
+                    <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+                      <p className="text-sm text-yellow-800">
+                        ⚠️ Se eliminarán también:
+                        <ul className="list-disc list-inside mt-2 space-y-1">
+                          <li>Todas las habilitaciones de este examen</li>
+                          <li>Todos los resultados de este examen</li>
+                        </ul>
+                      </p>
+                    </div>
+                    <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
+                      <motion.button
+                        onClick={() => {
+                          setShowDeleteExamModal(false);
+                          setExamToDelete(null);
+                        }}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        Cancelar
+                      </motion.button>
+                      <motion.button
+                        onClick={handleDeleteExam}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                      >
+                        Eliminar
+                      </motion.button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         );
 
@@ -1229,19 +1324,9 @@ export default function App() {
                       <motion.button
                         onClick={() => {
                           if (window.confirm(`¿Estás seguro de que deseas eliminar el grupo "${group.name}"?`)) {
-                            // Remove group
                             const updatedGroups = groups.filter(g => g.id !== group.id);
-                            // Remove group from all users
-                            const updatedUsers = users.map(u => 
-                              u.role === 'student' 
-                                ? { ...u, groupIds: u.groupIds.filter(id => id !== group.id) }
-                                : u
-                            );
                             setGroups(updatedGroups);
-                            setUsers(updatedUsers);
                             saveToFirebase('groups', updatedGroups);
-                            saveToFirebase('users', updatedUsers);
-                            alert('Grupo eliminado exitosamente');
                           }
                         }}
                         whileHover={{ scale: 1.05 }}
@@ -1285,38 +1370,66 @@ export default function App() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Miembros del Grupo</label>
-                      <div className="border border-gray-300 rounded-lg p-3 bg-gray-50 max-h-60 overflow-y-auto">
-                        {users
-                          .filter(u => u.role === 'student' && u.status === 'active')
-                          .map(student => (
-                            <div key={student.dni} className="flex items-center py-2 border-b border-gray-200 last:border-b-0">
-                              <input
-                                type="checkbox"
-                                id={`member-${student.dni}`}
-                                checked={groupMembers.includes(student.dni)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setGroupMembers([...groupMembers, student.dni]);
-                                  } else {
-                                    setGroupMembers(groupMembers.filter(dni => dni !== student.dni));
-                                  }
-                                }}
-                                className="mr-3"
-                              />
-                              <label htmlFor={`member-${student.dni}`} className="text-sm text-gray-700">
-                                {student.name} ({student.dni})
-                              </label>
-                            </div>
-                          ))}
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Agregar Miembros (por DNI)</label>
+                      <div className="flex space-x-2">
+                        <input
+                          type="text"
+                          id="addMemberInput"
+                          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="DNI del estudiante"
+                        />
+                        <motion.button
+                          onClick={() => {
+                            const input = document.getElementById('addMemberInput');
+                            const dni = input.value.trim();
+                            if (dni) {
+                              if (groupMembers.includes(dni)) {
+                                alert('Este DNI ya está en el grupo');
+                              } else if (users.some(u => u.dni === dni && u.role === 'student')) {
+                                setGroupMembers([...groupMembers, dni]);
+                                input.value = '';
+                              } else {
+                                alert('No se encontró un estudiante con este DNI');
+                              }
+                            }
+                          }}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg"
+                        >
+                          +
+                        </motion.button>
                       </div>
                     </div>
+                    {groupMembers.length > 0 && (
+                      <div className="mt-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Miembros actuales:</label>
+                        <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                          {groupMembers.map(dni => {
+                            const student = users.find(u => u.dni === dni);
+                            return (
+                              <span key={dni} className="bg-blue-100 text-blue-800 text-sm px-2 py-1 rounded-full flex items-center">
+                                {student?.name || dni}
+                                <button
+                                  onClick={() => setGroupMembers(groupMembers.filter(m => m !== dni))}
+                                  className="ml-1 text-blue-600 hover:text-blue-800"
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                     <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
                       <motion.button
                         onClick={() => {
                           setShowCreateGroup(false);
                           setIsEditingGroup(false);
                           setEditingExam(null);
+                          setGroupName('');
+                          setGroupMembers([]);
                         }}
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
@@ -1330,7 +1443,7 @@ export default function App() {
                         whileTap={{ scale: 0.95 }}
                         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                       >
-                        {isEditingGroup ? 'Guardar Cambios' : 'Crear'}
+                        {isEditingGroup ? 'Guardar Cambios' : 'Crear Grupo'}
                       </motion.button>
                     </div>
                   </div>
@@ -1345,131 +1458,95 @@ export default function App() {
           <div className="p-6">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold text-gray-800">👥 Usuarios</h2>
-              <div className="flex space-x-3">
-                <motion.button
-                  onClick={() => setShowAccountSettings(true)}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
-                >
-                  <span className="mr-2">⚙️</span> Mi Cuenta
-                </motion.button>
-              </div>
+              <motion.button
+                onClick={() => setShowAccountSettings(true)}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="bg-yellow-600 hover:bg-yellow-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
+              >
+                <span className="mr-2">⚙️</span> Configuración de Cuenta
+              </motion.button>
             </div>
-            
-            {/* Pending Users Section */}
-            <div className="mb-8">
-              <h3 className="text-xl font-bold text-gray-800 mb-4">Usuarios Pendientes de Aprobación</h3>
-              {users.filter(u => u.status === 'pending' && u.role === 'student').length > 0 ? (
-                <div className="space-y-4">
-                  {users.filter(u => u.status === 'pending' && u.role === 'student').map(user => (
-                    <div key={user.dni} className="border border-gray-200 rounded-lg p-4 bg-yellow-50">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h3 className="font-bold text-lg text-gray-800">{user.name}</h3>
-                          <p className="text-gray-600 mt-1">DNI: {user.dni}</p>
-                        </div>
-                        <motion.button
-                          onClick={() => handleApproveStudent(user.dni)}
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
-                        >
-                          <span className="mr-2">✅</span> Aprobar
-                        </motion.button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-gray-500">
-                  No hay usuarios pendientes de aprobación
-                </div>
-              )}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Filtrar por estado</label>
+              <select
+                onChange={(e) => {
+                  const status = e.target.value;
+                  if (status === 'all') {
+                                     }
+                }}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="all">Todos los usuarios</option>
+                <option value="active">Activos</option>
+                <option value="pending">Pendientes</option>
+              </select>
             </div>
-
             <div className="overflow-x-auto bg-white rounded-xl shadow-md border border-gray-100">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DNI</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuario</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rol</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grupos</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {users.map(user => (
+                  {users.filter(u => u.role !== 'admin').map(user => (
                     <tr key={user.dni} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.dni}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.name}</td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          user.role === 'admin'
-                            ? 'bg-purple-100 text-purple-800'
+                          user.role === 'admin' 
+                            ? 'bg-purple-100 text-purple-800' 
                             : 'bg-blue-100 text-blue-800'
                         }`}>
-                          {user.role === 'admin' ? 'Administrador' : 'Estudiante'}
+                          {user.role === 'admin' ? 'Admin' : 'Estudiante'}
                         </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {user.role === 'student' && user.groupIds.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {user.groupIds.map(groupId => {
-                              const group = groups.find(g => g.id === groupId);
-                              return group ? (
-                                <span key={groupId} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
-                                  {group.name}
-                                </span>
-                              ) : null;
-                            })}
-                          </div>
-                        ) : (
-                          '-'
-                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          user.status === 'active'
-                            ? 'bg-green-100 text-green-800'
+                          user.status === 'active' 
+                            ? 'bg-green-100 text-green-800' 
                             : 'bg-yellow-100 text-yellow-800'
                         }`}>
                           {user.status === 'active' ? 'Activo' : 'Pendiente'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 space-x-3">
-                        {user.status === 'pending' && user.role === 'student' && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <div className="flex space-x-2">
+                          {user.status === 'pending' && (
+                            <motion.button
+                              onClick={() => handleApproveStudent(user.dni)}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              className="text-green-600 hover:text-green-900"
+                              title="Aprobar usuario"
+                            >
+                              ✓
+                            </motion.button>
+                          )}
                           <motion.button
-                            onClick={() => handleApproveStudent(user.dni)}
+                            onClick={() => {
+                              setEditingUser(user);
+                              setEditName(user.name);
+                              setEditDni(user.dni);
+                              setEditPassword('');
+                              setEditRole(user.role);
+                              setEditGroups(user.groupIds || []);
+                              setEditStatus(user.status);
+                              setShowEditUser(true);
+                            }}
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
-                            className="text-green-600 hover:text-green-800 font-medium"
-                            title="Aprobar estudiante"
+                            className="text-blue-600 hover:text-blue-900"
+                            title="Editar usuario"
                           >
-                            ✅
+                            ✏️
                           </motion.button>
-                        )}
-                        <motion.button
-                          onClick={() => {
-                            setEditingUser(user);
-                            setEditName(user.name);
-                            setEditDni(user.dni);
-                            setEditPassword('');
-                            setEditRole(user.role);
-                            setEditGroups(user.groupIds || []);
-                            setEditStatus(user.status);
-                            setShowEditUser(true);
-                          }}
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          className="text-blue-600 hover:text-blue-900"
-                          title="Editar"
-                        >
-                          ✏️
-                        </motion.button>
-                        {user.dni !== currentUser.dni && (
                           <motion.button
                             onClick={() => {
                               setUserToDelete(user);
@@ -1478,11 +1555,11 @@ export default function App() {
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
                             className="text-red-600 hover:text-red-900"
-                            title="Eliminar"
+                            title="Eliminar usuario"
                           >
                             🗑️
                           </motion.button>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1512,8 +1589,8 @@ export default function App() {
                       <p className="text-sm text-yellow-800">
                         ⚠️ Se eliminarán también:
                         <ul className="list-disc list-inside mt-2 space-y-1">
-                          <li>Todas las respuestas y resultados del usuario</li>
-                          <li>El usuario será removido de todos los grupos</li>
+                          <li>Su membresía en todos los grupos</li>
+                          <li>Todos sus resultados en exámenes</li>
                         </ul>
                       </p>
                     </div>
@@ -1548,12 +1625,30 @@ export default function App() {
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
                   <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xl font-bold text-gray-800">⚙️ Mi Cuenta</h3>
+                    <h3 className="text-xl font-bold text-gray-800">⚙️ Configuración de Cuenta</h3>
                     <button onClick={() => setShowAccountSettings(false)} className="text-gray-500 hover:text-gray-700">
                       ✕
                     </button>
                   </div>
                   <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Usuario Actual</label>
+                      <input
+                        type="text"
+                        value={currentUser?.dni || ''}
+                        disabled
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Nombre Actual</label>
+                      <input
+                        type="text"
+                        value={currentUser?.name || ''}
+                        disabled
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100"
+                      />
+                    </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña Actual</label>
                       <input
@@ -1565,11 +1660,21 @@ export default function App() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Nuevo Nombre de Usuario (DNI)</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Nuevo Usuario (opcional)</label>
                       <input
                         type="text"
                         value={newUsername}
                         onChange={(e) => setNewUsername(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Dejar en blanco para no cambiar"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Nueva Contraseña (opcional)</label>
+                      <input
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         placeholder="Dejar en blanco para no cambiar"
                       />
@@ -1597,77 +1702,6 @@ export default function App() {
                         Guardar Cambios
                       </motion.button>
                     </div>
-                    <div className="pt-4 border-t border-gray-100">
-                      <motion.button
-                        onClick={() => {
-                          setShowAccountSettings(false);
-                          setShowChangePassword(true);
-                        }}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        className="w-full bg-yellow-600 hover:bg-yellow-700 text-white font-medium py-2 px-4 rounded-lg flex items-center justify-center"
-                      >
-                        <span className="mr-2">🔑</span> Cambiar Contraseña
-                      </motion.button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Change Password Modal */}
-            {showChangePassword && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xl font-bold text-gray-800">🔑 Cambiar Contraseña</h3>
-                    <button onClick={() => setShowChangePassword(false)} className="text-gray-500 hover:text-gray-700">
-                      ✕
-                    </button>
-                  </div>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña Actual</label>
-                      <input
-                        type="password"
-                        value={currentPassword}
-                        onChange={(e) => setCurrentPassword(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Ingrese su contraseña actual"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Nueva Contraseña</label>
-                      <input
-                        type="password"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Ingrese la nueva contraseña"
-                      />
-                    </div>
-                    <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
-                      <motion.button
-                        onClick={() => {
-                          setShowChangePassword(false);
-                          setCurrentPassword('');
-                          setNewPassword('');
-                        }}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-                      >
-                        Cancelar
-                      </motion.button>
-                      <motion.button
-                        onClick={handleChangePassword}
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                      >
-                        Guardar Cambios
-                      </motion.button>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -1685,7 +1719,7 @@ export default function App() {
                   </div>
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Nombre Completo</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
                       <input
                         type="text"
                         value={editName}
@@ -1694,7 +1728,7 @@ export default function App() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">DNI/Usuario</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">DNI</label>
                       <input
                         type="text"
                         value={editDni}
@@ -1834,7 +1868,6 @@ export default function App() {
                       </motion.button>
                       <motion.button
                         onClick={() => {
-                          // Update user status to active and assign groups
                           const updatedUsers = users.map(user => {
                             if (user.dni === editingUser.dni) {
                               return {
@@ -1927,11 +1960,9 @@ export default function App() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {results
                     .filter(result => {
-                      // Filter by exam
                       if (selectedResultExam !== 'all' && result.examId.toString() !== selectedResultExam) {
                         return false;
                       }
-                      // Filter by group
                       if (selectedResultGroup !== 'all') {
                         const student = users.find(u => u.dni === result.studentDni);
                         if (!student) return false;
@@ -2257,36 +2288,39 @@ export default function App() {
               </div>
               <div className="bg-gray-50 px-6 py-4 flex justify-end">
                 {!examSubmitted ? (
-                  <motion.button
-                    onClick={handleSubmitExam}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg flex items-center"
-                  >
-                    <span className="mr-2">✅</span> Enviar Respuestas
+                  <motion.button onClick={handleSubmitExam}
+                    disabled={isSubmitting || examSubmitted}
+                    whileHover={isSubmitting || examSubmitted ? {} : { scale: 1.05 }}
+                    whileTap={isSubmitting || examSubmitted ? {} : { scale: 0.95 }}
+                    className={`${
+                    isSubmitting || examSubmitted 
+                    ? 'bg-gray-400 cursor-not-allowed' 
+                    : 'bg-green-600 hover:bg-green-700'
+                    } text-white font-bold py-3 px-8 rounded-lg flex items-center transition-all`}
+                    >
+                    <span className="mr-2">✅</span>
+                    {isSubmitting ? 'Enviando...' : 'Enviar Respuestas'}
                   </motion.button>
                 ) : (
-                  <div className="text-center py-4">
+                  <div className="text-center py-4 w-full">
                     <div className="text-4xl font-bold text-green-600 mb-2">¡Examen completado!</div>
-                    {(() => {
-                      const result = results.find(r =>
-                        r.studentDni === currentUser.dni &&
-                        r.examId === currentExam.id
-                      );
-                      if (result?.showScore) {
-                        return (
-                          <div className="text-xl text-gray-700">
-                            Tu puntaje es: <span className="font-bold text-blue-600">{result.score}/10</span>
-                          </div>
-                        );
-                      } else {
-                        return (
-                          <div className="text-xl text-gray-700">
-                            Tu puntaje será publicado próximamente por el administrador
-                          </div>
-                        );
-                      }
-                    })()}
+                    {showScoreForSubmittedExam ? (
+                      <div className="text-xl text-gray-700">
+                        Tu puntaje es: <span className="font-bold text-blue-600">
+                          {(() => {
+                            const result = results.find(r =>
+                              r.studentDni === currentUser.dni &&
+                              r.examId === currentExam.id
+                            );
+                            return result ? `${result.score}/10` : 'N/A';
+                          })()}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="text-xl text-gray-700">
+                        Gracias ha finalizado correctamente
+                      </div>
+                    )}
                     <motion.button
                       onClick={() => setCurrentExam(null)}
                       whileHover={{ scale: 1.05 }}
