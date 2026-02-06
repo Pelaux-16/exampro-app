@@ -149,6 +149,10 @@ export default function App() {
   const [examToDelete, setExamToDelete] = useState(null);
   const [isEditingGroup, setIsEditingGroup] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showImportUsersModal, setShowImportUsersModal] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importPreview, setImportPreview] = useState([]);
+  const [importErrors, setImportErrors] = useState([]);
 
   // Data states - Load from Firebase
   const [exams, setExams] = useState([]);
@@ -899,9 +903,175 @@ export default function App() {
       setExamToDelete(null);
     }
   };
+      // Handle file selection for import
+const handleFileSelect = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  setImportFile(file);
+  setImportErrors([]);
+  
+  // Read and parse CSV file
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    try {
+      const csvData = event.target.result;
+      const parsedData = parseCSV(csvData);
+      setImportPreview(parsedData);
+    } catch (error) {
+      console.error('Error parsing CSV:', error);
+      setImportErrors(['Error al leer el archivo. Asegúrate de que sea un CSV válido.']);
+    }
+  };
+  reader.readAsText(file);
+};
 
+// Parse CSV data
+const parseCSV = (csv) => {
+  const lines = csv.split('\n');
+  const headers = lines[0].split(';').map(h => h.trim().toLowerCase());
+  
+  const requiredHeaders = ['dni', 'nombre', 'apellido', 'contraseña', 'grupo'];
+  const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
+  
+  if (missingHeaders.length > 0) {
+    throw new Error(`Faltan las siguientes columnas requeridas: ${missingHeaders.join(', ')}`);
+  }
+  
+  const data = [];
+  const errors = [];
+  
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    
+    const values = lines[i].split(';').map(v => v.trim());
+    if (values.length < requiredHeaders.length) continue;
+    
+    const row = {};
+    headers.forEach((header, index) => {
+      row[header] = values[index] || '';
+    });
+    
+    // Validate row
+    const rowErrors = [];
+    
+    // Validate DNI
+    if (!row.dni || row.dni.length < 6) {
+      rowErrors.push('DNI inválido');
+    } else if (users.some(u => u.dni === row.dni)) {
+      rowErrors.push('DNI ya existe');
+    }
+    
+    // Validate name
+    if (!row.nombre || row.nombre.length < 2) {
+      rowErrors.push('Nombre inválido');
+    }
+    
+    // Validate lastname
+    if (!row.apellido || row.apellido.length < 2) {
+      rowErrors.push('Apellido inválido');
+    }
+    
+    // Validate password
+    if (!row.contraseña || row.contraseña.length < 4) {
+      rowErrors.push('Contraseña debe tener al menos 4 caracteres');
+    }
+    
+    // Validate group
+    if (row.grupo) {
+      const groupName = row.grupo.trim();
+      const group = groups.find(g => g.name.toLowerCase() === groupName.toLowerCase());
+      if (!group) {
+        rowErrors.push(`Grupo "${row.grupo}" no encontrado`);
+      } else {
+        row.groupId = group.id;
+      }
+    }
+    
+    if (rowErrors.length > 0) {
+      errors.push({ row: i + 1, errors: rowErrors });
+    } else {
+      data.push({
+        dni: row.dni,
+        name: `${row.nombre} ${row.apellido}`,
+        password: row.contraseña,
+        groupId: row.groupId || null,
+        role: 'student',
+        status: 'active',
+        groupIds: row.groupId ? [row.groupId] : []
+      });
+    }
+  }
+  
+  if (errors.length > 0) {
+    setImportErrors(errors);
+  }
+  
+  return data;
+};
+
+// Import users from preview
+const handleImportUsers = async () => {
+  if (importPreview.length === 0) {
+    alert('No hay usuarios para importar');
+    return;
+  }
+  
+  try {
+    const newUsers = [...users];
+    const newGroups = [...groups];
+    
+    importPreview.forEach(user => {
+      newUsers.push(user);
+      
+      // Add user to group if specified
+      if (user.groupId) {
+        const groupIndex = newGroups.findIndex(g => g.id === user.groupId);
+        if (groupIndex !== -1) {
+          if (!newGroups[groupIndex].members.includes(user.dni)) {
+            newGroups[groupIndex].members = [...newGroups[groupIndex].members, user.dni];
+          }
+        }
+      }
+    });
+    
+    setUsers(newUsers);
+    setGroups(newGroups);
+    
+    await saveToFirebase('users', newUsers);
+    await saveToFirebase('groups', newGroups);
+    
+    // Reset import state
+    setImportFile(null);
+    setImportPreview([]);
+    setImportErrors([]);
+    setShowImportUsersModal(false);
+    
+    alert(`✅ Se importaron ${importPreview.length} usuarios exitosamente`);
+  } catch (error) {
+    console.error('Error importing users:', error);
+    alert(`❌ Error al importar usuarios: ${error.message}`);
+  }
+};
+
+// Download template CSV
+const downloadTemplate = () => {
+  const template = `DNI;Nombre;Apellido;Contraseña;Grupo\n12345678;Juan;Pérez;1234;Grupo A\n23456789;María;García;5678;Grupo A\n34567890;Carlos;López;9012;Grupo B`;
+  
+  const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', 'plantilla_usuarios.csv');
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
   // Export results to CSV - FINAL CORRECTED VERSION WITH NUMERIC NOTE
-  const exportResults = () => {
+  // Export results to CSV - CORREGIDA Y MEJORADA
+const exportResults = () => {
+  try {
     // Filter results by exam
     let filteredResults = [...results];
     if (selectedResultExam !== 'all') {
@@ -916,6 +1086,7 @@ export default function App() {
         return student && student.groupIds.includes(groupIdNum);
       });
     }
+    
     if (filteredResults.length === 0) {
       alert('No hay resultados para exportar');
       return;
@@ -945,10 +1116,16 @@ export default function App() {
       const student = users.find(u => u.dni === result.studentDni);
       const exam = exams.find(e => e.id === result.examId);
       
-      // Get answers for each question
+      // Get answers for each question (manejar caso donde no hay examen)
       const answerColumns = questionIds.map(qId => {
+        if (!exam) return 'Examen no encontrado';
+        
         const question = exam.questions.find(q => q.id === qId);
-        const selectedOptionId = result.answers[qId];
+        if (!question) return 'Pregunta no encontrada';
+        
+        const selectedOptionId = result.answers?.[qId];
+        if (!selectedOptionId) return 'No respondida';
+        
         const selectedOption = question.options.find(o => o.id === selectedOptionId);
         const isCorrect = selectedOptionId === question.correctOptionId;
         
@@ -958,7 +1135,8 @@ export default function App() {
       // Count correct and incorrect answers
       let correctCount = 0;
       let incorrectCount = 0;
-      if (exam) {
+      
+      if (exam && result.answers) {
         exam.questions.forEach(question => {
           if (result.answers[question.id] === question.correctOptionId) {
             correctCount++;
@@ -969,14 +1147,14 @@ export default function App() {
       }
       
       return [
-        student?.name || result.studentDni,
+        student?.name || result.studentDni || 'Usuario no encontrado',
         exam?.name || `Examen ${result.examId}`,
-        `${result.score}/${result.total} (${(result.score / result.total * 100).toFixed(0)}%)`,
-        result.date,
+        `${result.score || 0}/${result.total || 10} (${((result.score || 0) / (result.total || 10) * 100).toFixed(0)}%)`,
+        result.date || 'Sin fecha',
         ...answerColumns,
         correctCount,
         incorrectCount,
-        result.score // ← NOTA NUMÉRICA AQUÍ
+        result.score || 0 // ← NOTA NUMÉRICA
       ];
     });
     
@@ -994,13 +1172,18 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', 'resultados_examenes.csv');
+    link.setAttribute('download', `resultados_examenes_${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    alert(`Se exportaron ${filteredResults.length} resultados exitosamente`);
-  };
+    
+    alert(`✅ Se exportaron ${filteredResults.length} resultados exitosamente`);
+  } catch (error) {
+    console.error('Error exporting results:', error);
+    alert(`❌ Error al exportar: ${error.message}\n\nPor favor, verifica que todos los exámenes tengan preguntas válidas.`);
+  }
+};
 
   // Student dashboard - get available exams
   const getAvailableExams = () => {
@@ -1557,21 +1740,173 @@ export default function App() {
         );
 
       case 'users':
+                             {/* Import Users Modal */}
+{showImportUsersModal && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl p-6 max-h-[90vh] overflow-y-auto">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-xl font-bold text-gray-800">📥 Importar Usuarios Masivamente</h3>
+        <button onClick={() => {
+          setShowImportUsersModal(false);
+          setImportFile(null);
+          setImportPreview([]);
+          setImportErrors([]);
+        }} className="text-gray-500 hover:text-gray-700">
+          ✕
+        </button>
+      </div>
+      
+      <div className="space-y-4">
+        <div className="bg-blue-50 p-4 rounded-lg">
+          <h4 className="font-bold text-lg text-gray-800 mb-2">📋 Instrucciones:</h4>
+          <ol className="list-decimal list-inside space-y-2 text-gray-700">
+            <li>Descarga la <button onClick={downloadTemplate} className="text-blue-600 hover:text-blue-800 font-medium underline">plantilla CSV</button></li>
+            <li>Llena el archivo con los datos de tus estudiantes</li>
+            <li>Selecciona el archivo y haz clic en "Importar"</li>
+            <li>¡Listo! Todos los usuarios se crearán automáticamente</li>
+          </ol>
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Seleccionar archivo CSV:
+          </label>
+          <input
+            type="file"
+            accept=".csv"
+            onChange={handleFileSelect}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+        </div>
+        
+        {importFile && (
+          <div className="bg-gray-50 p-4 rounded-lg">
+            <div className="flex justify-between items-center mb-2">
+              <div>
+                <p className="font-medium text-gray-800">{importFile.name}</p>
+                <p className="text-sm text-gray-600">{(importFile.size / 1024).toFixed(2)} KB</p>
+              </div>
+              <button
+                onClick={() => {
+                  setImportFile(null);
+                  setImportPreview([]);
+                  setImportErrors([]);
+                }}
+                className="text-red-600 hover:text-red-800 font-medium"
+              >
+                Eliminar
+              </button>
+            </div>
+            
+            {importPreview.length > 0 && (
+              <div className="mt-4">
+                <h4 className="font-bold text-gray-800 mb-2">Vista previa ({importPreview.length} usuarios):</h4>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">DNI</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nombre</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Grupo</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {importPreview.slice(0, 10).map((user, index) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                          <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{user.dni}</td>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{user.name}</td>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
+                            {user.groupId ? groups.find(g => g.id === user.groupId)?.name || 'Sin grupo' : 'Sin grupo'}
+                          </td>
+                        </tr>
+                      ))}
+                      {importPreview.length > 10 && (
+                        <tr>
+                          <td colSpan="3" className="px-4 py-2 text-center text-sm text-gray-500">
+                            ... y {importPreview.length - 10} usuarios más
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            
+            {importErrors.length > 0 && (
+              <div className="mt-4 bg-red-50 p-4 rounded-lg border border-red-200">
+                <h4 className="font-bold text-red-800 mb-2">⚠️ Errores encontrados:</h4>
+                <ul className="list-disc list-inside space-y-1 text-red-700">
+                  {importErrors.map((error, index) => (
+                    <li key={index}>
+                      Fila {error.row}: {error.errors.join(', ')}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-sm text-red-600">
+                  Corrige estos errores en tu archivo CSV antes de importar.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+        
+        <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
+          <motion.button
+            onClick={() => {
+              setShowImportUsersModal(false);
+              setImportFile(null);
+              setImportPreview([]);
+              setImportErrors([]);
+            }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            Cancelar
+          </motion.button>
+          <motion.button
+            onClick={handleImportUsers}
+            disabled={importPreview.length === 0 || importErrors.length > 0}
+            whileHover={importPreview.length === 0 || importErrors.length > 0 ? {} : { scale: 1.05 }}
+            whileTap={importPreview.length === 0 || importErrors.length > 0 ? {} : { scale: 0.95 }}
+            className={`px-4 py-2 rounded-lg transition-colors ${
+              importPreview.length === 0 || importErrors.length > 0
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-green-600 hover:bg-green-700 text-white'
+            }`}
+          >
+            {importErrors.length > 0 ? 'Corregir errores primero' : `Importar ${importPreview.length} usuarios`}
+          </motion.button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
         return (
           <div className="p-6">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-800">👥 Usuarios</h2>
-              <div className="flex space-x-3">
-                <motion.button
-                  onClick={() => setShowAccountSettings(true)}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
-                >
-                  <span className="mr-2">⚙️</span> Mi Cuenta
-                </motion.button>
-              </div>
-            </div>
+            <div className="flex justify-between items-center mb-6">
+  <h2 className="text-2xl font-bold text-gray-800">👥 Usuarios</h2>
+  <div className="flex space-x-3">
+    <motion.button
+      onClick={() => setShowImportUsersModal(true)}
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+      className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
+    >
+      <span className="mr-2">📥</span> Importar Usuarios
+    </motion.button>
+    <motion.button
+      onClick={() => setShowAccountSettings(true)}
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+      className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
+    >
+      <span className="mr-2">⚙️</span> Mi Cuenta
+    </motion.button>
+  </div>
+</div>
             
             {/* Pending Users Section */}
             <div className="mb-8">
