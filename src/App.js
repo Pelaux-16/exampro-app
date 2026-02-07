@@ -152,6 +152,9 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchByGroup, setSearchByGroup] = useState('all');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Multi-delete states
+  const [selectedUsers, setSelectedUsers] = useState([]);
+  const [showDeleteSelectedModal, setShowDeleteSelectedModal] = useState(false);
   // Import users states
   const [showImportUsersModal, setShowImportUsersModal] = useState(false); 
   const [importFile, setImportFile] = useState(null); 
@@ -1008,6 +1011,99 @@ const handleImportUsers = async () => {
     alert(`❌ Error al importar: ${error.message}`);
   }
 };
+	// Toggle select single user
+const toggleUserSelection = (dni) => {
+  setSelectedUsers(prev => 
+    prev.includes(dni) 
+      ? prev.filter(id => id !== dni) 
+      : [...prev, dni]
+  );
+};
+
+// Toggle select all visible users
+const toggleAllUsers = () => {
+  // Get currently visible users (after search/filter)
+  const visibleUsers = users.filter(user => {
+    const matchesSearch = !searchQuery || 
+      user.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      user.dni.includes(searchQuery);
+    const matchesGroup = searchByGroup === 'all' || 
+      (user.role === 'student' && user.groupIds.includes(parseInt(searchByGroup)));
+    return matchesSearch && matchesGroup;
+  });
+  
+  if (selectedUsers.length === visibleUsers.length) {
+    setSelectedUsers([]); // Deselect all
+  } else {
+    setSelectedUsers(visibleUsers.map(u => u.dni)); // Select all visible
+  }
+};
+
+// Confirm delete selected users
+const confirmDeleteSelectedUsers = () => {
+  if (selectedUsers.length === 0) return;
+  setShowDeleteSelectedModal(true);
+};
+
+// Delete selected users
+const handleDeleteSelectedUsers = async () => {
+  if (selectedUsers.length === 0) {
+    setShowDeleteSelectedModal(false);
+    return;
+  }
+  
+  try {
+    // Prevent deleting current user
+    const usersToDelete = selectedUsers.filter(dni => dni !== currentUser?.dni);
+    const selfIncluded = selectedUsers.length > usersToDelete.length;
+    
+    if (usersToDelete.length === 0) {
+      alert(selfIncluded ? 'No puedes eliminarte a ti mismo mientras estás conectado' : 'No hay usuarios seleccionados para eliminar');
+      setShowDeleteSelectedModal(false);
+      setSelectedUsers([]);
+      return;
+    }
+    
+    // Remove users from groups
+    let updatedGroups = [...groups];
+    usersToDelete.forEach(dni => {
+      updatedGroups = updatedGroups.map(group => ({
+        ...group,
+        members: group.members.filter(memberDni => memberDni !== dni)
+      }));
+    });
+    
+    // Remove users' results
+    const updatedResults = results.filter(r => !usersToDelete.includes(r.studentDni));
+    
+    // Remove users
+    const updatedUsers = users.filter(u => !usersToDelete.includes(u.dni));
+    
+    // Update state
+    setUsers(updatedUsers);
+    setGroups(updatedGroups);
+    setResults(updatedResults);
+    
+    // Save to Firebase
+    await saveToFirebase('users', updatedUsers);
+    await saveToFirebase('groups', updatedGroups);
+    await saveToFirebase('results', updatedResults);
+    
+    // Reset selection and close modal
+    setSelectedUsers([]);
+    setShowDeleteSelectedModal(false);
+    
+    const message = selfIncluded 
+      ? `✅ ${usersToDelete.length} usuario${usersToDelete.length !== 1 ? 's' : ''} eliminado${usersToDelete.length !== 1 ? 's' : ''} exitosamente.\n(No puedes eliminarte a ti mismo)`
+      : `✅ ${usersToDelete.length} usuario${usersToDelete.length !== 1 ? 's' : ''} eliminado${usersToDelete.length !== 1 ? 's' : ''} exitosamente`;
+    
+    alert(message);
+  } catch (error) {
+    console.error('Error deleting selected users:', error);
+    alert('Error al eliminar los usuarios seleccionados. Por favor, intenta de nuevo.');
+    setShowDeleteSelectedModal(false);
+  }
+};
   // Delete exam
   const handleDeleteExam = async () => {
     if (!examToDelete) return;
@@ -1720,22 +1816,35 @@ const exportResults = () => {
             <div className="flex justify-between items-center mb-6">
   <h2 className="text-2xl font-bold text-gray-800">👥 Usuarios</h2>
   <div className="flex space-x-3">
-    <motion.button
-      onClick={() => setShowImportUsersModal(true)}
-      whileHover={{ scale: 1.05 }}
-      whileTap={{ scale: 0.95 }}
-      className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
-    >
-      <span className="mr-2">📥</span> Importar Usuarios
-    </motion.button>
-    <motion.button
-      onClick={() => setShowAccountSettings(true)}
-      whileHover={{ scale: 1.05 }}
-      whileTap={{ scale: 0.95 }}
-      className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
-    >
-      <span className="mr-2">⚙️</span> Mi Cuenta
-    </motion.button>
+    {selectedUsers.length > 0 ? (
+      <motion.button
+        onClick={confirmDeleteSelectedUsers}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg flex items-center animate-pulse"
+      >
+        <span className="mr-2">🗑️</span> Eliminar Seleccionados ({selectedUsers.length})
+      </motion.button>
+    ) : (
+      <>
+        <motion.button
+          onClick={() => setShowImportUsersModal(true)}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
+        >
+          <span className="mr-2">📥</span> Importar Usuarios
+        </motion.button>
+        <motion.button
+          onClick={() => setShowAccountSettings(true)}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
+        >
+          <span className="mr-2">⚙️</span> Mi Cuenta
+        </motion.button>
+      </>
+    )}
   </div>
 </div>
             {/* Search Section - Simple and Safe */}
@@ -1797,116 +1906,137 @@ const exportResults = () => {
 
             <div className="overflow-x-auto bg-white rounded-xl shadow-md border border-gray-100">
               <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DNI</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rol</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grupos</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {users
-  .filter(user => {
-    // Filtrar por búsqueda de texto
-    const matchesSearch = !searchQuery || 
-      user.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      user.dni.includes(searchQuery);
-    
-    // Filtrar por grupo
-    const matchesGroup = searchByGroup === 'all' || 
-      (user.role === 'student' && user.groupIds.includes(parseInt(searchByGroup)));
-    
-    return matchesSearch && matchesGroup;
-  })
-  .map(user => (
-                    <tr key={user.dni} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.dni}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.name}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          user.role === 'admin'
-                            ? 'bg-purple-100 text-purple-800'
-                            : 'bg-blue-100 text-blue-800'
-                        }`}>
-                          {user.role === 'admin' ? 'Administrador' : 'Estudiante'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {user.role === 'student' && user.groupIds.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {user.groupIds.map(groupId => {
-                              const group = groups.find(g => g.id === groupId);
-                              return group ? (
-                                <span key={groupId} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
-                                  {group.name}
-                                </span>
-                              ) : null;
-                            })}
-                          </div>
-                        ) : (
-                          '-'
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          user.status === 'active'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {user.status === 'active' ? 'Activo' : 'Pendiente'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 space-x-3">
-                        {user.status === 'pending' && user.role === 'student' && (
-                          <motion.button
-                            onClick={() => handleApproveStudent(user.dni)}
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            className="text-green-600 hover:text-green-800 font-medium"
-                            title="Aprobar estudiante"
-                          >
-                            ✅
-                          </motion.button>
-                        )}
-                        <motion.button
-                          onClick={() => {
-                            setEditingUser(user);
-                            setEditName(user.name);
-                            setEditDni(user.dni);
-                            setEditPassword('');
-                            setEditRole(user.role);
-                            setEditGroups(user.groupIds || []);
-                            setEditStatus(user.status);
-                            setShowEditUser(true);
-                          }}
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          className="text-blue-600 hover:text-blue-900"
-                          title="Editar"
-                        >
-                          ✏️
-                        </motion.button>
-                        {user.dni !== currentUser.dni && (
-                          <motion.button
-                            onClick={() => {
-                              setUserToDelete(user);
-                              setShowDeleteUserModal(true);
-                            }}
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            className="text-red-600 hover:text-red-900"
-                            title="Eliminar"
-                          >
-                            🗑️
-                          </motion.button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
+                	<thead className="bg-gray-50">
+  <tr>
+    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+      <input
+        type="checkbox"
+        checked={selectedUsers.length > 0}
+        onChange={toggleAllUsers}
+        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+        title={selectedUsers.length > 0 ? "Deseleccionar todos" : "Seleccionar todos los visibles"}
+      />
+    </th>
+    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DNI</th>
+    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
+    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rol</th>
+    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grupos</th>
+    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+  </tr>
+</thead>
+               <tbody className="bg-white divide-y divide-gray-200">
+  {users
+    .filter(user => {
+      const matchesSearch = !searchQuery || 
+        user.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        user.dni.includes(searchQuery);
+      const matchesGroup = searchByGroup === 'all' || 
+        (user.role === 'student' && user.groupIds.includes(parseInt(searchByGroup)));
+      return matchesSearch && matchesGroup;
+    })
+    .map((user, index) => {
+      const isSelected = selectedUsers.includes(user.dni);
+      return (
+        <tr 
+          key={index} 
+          className={`hover:bg-gray-50 ${isSelected ? 'bg-blue-50' : ''}`}
+        >
+          <td className="px-4 py-4 whitespace-nowrap w-12">
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={() => toggleUserSelection(user.dni)}
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              disabled={user.dni === currentUser?.dni}
+              title={user.dni === currentUser?.dni ? "No puedes seleccionarte a ti mismo" : ""}
+            />
+          </td>
+          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.dni}</td>
+          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.name}</td>
+          <td className="px-6 py-4 whitespace-nowrap">
+            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+              user.role === 'admin'
+                ? 'bg-purple-100 text-purple-800'
+                : 'bg-blue-100 text-blue-800'
+            }`}>
+              {user.role === 'admin' ? 'Administrador' : 'Estudiante'}
+            </span>
+          </td>
+          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+            {user.role === 'student' && user.groupIds.length > 0 ? (
+              <div className="flex flex-wrap gap-1">
+                {user.groupIds.map(groupId => {
+                  const group = groups.find(g => g.id === groupId);
+                  return group ? (
+                    <span key={groupId} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+                      {group.name}
+                    </span>
+                  ) : null;
+                })}
+              </div>
+            ) : (
+              '-'
+            )}
+          </td>
+          <td className="px-6 py-4 whitespace-nowrap">
+            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+              user.status === 'active'
+                ? 'bg-green-100 text-green-800'
+                : 'bg-yellow-100 text-yellow-800'
+            }`}>
+              {user.status === 'active' ? 'Activo' : 'Pendiente'}
+            </span>
+          </td>
+          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 space-x-3">
+            {user.status === 'pending' && user.role === 'student' && (
+              <motion.button
+                onClick={() => handleApproveStudent(user.dni)}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="text-green-600 hover:text-green-800 font-medium"
+                title="Aprobar estudiante"
+              >
+                ✅
+              </motion.button>
+            )}
+            <motion.button
+              onClick={() => {
+                setEditingUser(user);
+                setEditName(user.name);
+                setEditDni(user.dni);
+                setEditPassword('');
+                setEditRole(user.role);
+                setEditGroups(user.groupIds || []);
+                setEditStatus(user.status);
+                setShowEditUser(true);
+              }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="text-blue-600 hover:text-blue-900"
+              title="Editar"
+            >
+              ✏️
+            </motion.button>
+            {user.dni !== currentUser.dni && (
+              <motion.button
+                onClick={() => {
+                  setUserToDelete(user);
+                  setShowDeleteUserModal(true);
+                }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="text-red-600 hover:text-red-900"
+                title="Eliminar"
+              >
+                🗑️
+              </motion.button>
+            )}
+          </td>
+        </tr>
+      );
+    })}
+</tbody>
               </table>
             </div>
 
@@ -2309,6 +2439,81 @@ const exportResults = () => {
                           : importPreview.length === 0
                             ? 'Selecciona un archivo CSV'
                             : `Importar ${importPreview.length} usuarios`}
+                      </motion.button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+			            {/* Delete Selected Users Modal */}
+            {showDeleteSelectedModal && selectedUsers.length > 0 && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold text-gray-800">Eliminar Usuarios Seleccionados</h3>
+                    <button onClick={() => {
+                      setShowDeleteSelectedModal(false);
+                      setSelectedUsers([]);
+                    }} className="text-gray-500 hover:text-gray-700">
+                      ✕
+                    </button>
+                  </div>
+                  <div className="space-y-4">
+                    <p className="text-gray-700">
+                      ¿Estás seguro de que deseas eliminar <span className="font-bold">{selectedUsers.length}</span> usuario{selectedUsers.length !== 1 ? 's' : ''}?<br />
+                      <span className="text-red-600 font-medium">Esta acción no se puede deshacer.</span>
+                    </p>
+                    
+                    <div className="bg-blue-50 p-3 rounded-lg max-h-48 overflow-y-auto border border-blue-200">
+                      <p className="font-medium text-sm text-blue-800 mb-2">Usuarios seleccionados:</p>
+                      <ul className="space-y-1 text-sm">
+                        {users
+                          .filter(u => selectedUsers.includes(u.dni))
+                          .map((user, i) => (
+                            <li key={i} className={`flex items-center ${user.dni === currentUser?.dni ? 'text-yellow-700 line-through' : ''}`}>
+                              {user.dni === currentUser?.dni ? (
+                                <span className="mr-2">⚠️</span>
+                              ) : (
+                                <span className="mr-2">•</span>
+                              )}
+                              <span>{user.name} ({user.dni})</span>
+                              {user.dni === currentUser?.dni && (
+                                <span className="ml-2 text-xs">(No puedes eliminarte)</span>
+                              )}
+                            </li>
+                          ))}
+                      </ul>
+                    </div>
+                    
+                    <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+                      <p className="text-sm text-yellow-800">
+                        ⚠️ Se eliminarán también:
+                        <ul className="list-disc list-inside mt-1 space-y-1">
+                          <li>Todas las respuestas y resultados de estos usuarios</li>
+                          <li>Los usuarios serán removidos de todos los grupos</li>
+                        </ul>
+                      </p>
+                    </div>
+                    
+                    <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
+                      <motion.button
+                        onClick={() => {
+                          setShowDeleteSelectedModal(false);
+                          setSelectedUsers([]);
+                        }}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        Cancelar
+                      </motion.button>
+                      <motion.button
+                        onClick={handleDeleteSelectedUsers}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                      >
+                        Eliminar Seleccionados
                       </motion.button>
                     </div>
                   </div>
