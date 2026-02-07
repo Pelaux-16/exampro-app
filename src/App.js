@@ -152,7 +152,11 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchByGroup, setSearchByGroup] = useState('all');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
+  // Import users states
+  const [showImportUsersModal, setShowImportUsersModal] = useState(false); 
+  const [importFile, setImportFile] = useState(null); 
+  const [importPreview, setImportPreview] = useState([]);
+  const [importErrors, setImportErrors] = useState([]);
   // Data states - Load from Firebase
   const [exams, setExams] = useState([]);
   const [groups, setGroups] = useState([]);
@@ -867,7 +871,143 @@ export default function App() {
     setExamToDelete(examId);
     setShowDeleteExamModal(true);
   };
+  // Download template CSV
+const downloadTemplate = () => {
+  const template = `DNI;Nombre;Apellido;Contraseña;Grupo\n12345678;Juan;Pérez;1234;Grupo A\n23456789;María;García;5678;Grupo A\n34567890;Carlos;López;9012;Grupo B`;
+  
+  const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', 'plantilla_usuarios.csv');
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
 
+// Handle file selection for import
+const handleFileSelect = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  setImportFile(file);
+  setImportErrors([]);
+  
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    try {
+      const csvData = event.target.result;
+      const lines = csvData.split('\n').filter(line => line.trim());
+      
+      if (lines.length < 2) {
+        setImportErrors(['El archivo está vacío o no tiene datos']);
+        return;
+      }
+      
+      const headers = lines[0].split(';').map(h => h.trim().toLowerCase());
+      const requiredHeaders = ['dni', 'nombre', 'apellido', 'contraseña', 'grupo'];
+      const missing = requiredHeaders.filter(h => !headers.includes(h));
+      
+      if (missing.length > 0) {
+        setImportErrors([`Faltan columnas: ${missing.join(', ')}`]);
+        return;
+      }
+      
+      const preview = [];
+      const errors = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        if (!lines[i].trim()) continue;
+        
+        const values = lines[i].split(';').map(v => v.trim());
+        if (values.length < 5) continue;
+        
+        const row = {
+          dni: values[0],
+          nombre: values[1],
+          apellido: values[2],
+          contraseña: values[3],
+          grupo: values[4]
+        };
+        
+        const rowErrors = [];
+        
+        if (row.dni.length < 6) rowErrors.push('DNI muy corto');
+        if (row.nombre.length < 2) rowErrors.push('Nombre inválido');
+        if (row.apellido.length < 2) rowErrors.push('Apellido inválido');
+        if (row.contraseña.length < 4) rowErrors.push('Contraseña muy corta');
+        
+        if (rowErrors.length > 0) {
+          errors.push({ row: i + 1, errors: rowErrors });
+        } else {
+          let groupId = null;
+          if (row.grupo) {
+            const group = groups.find(g => 
+              g.name.toLowerCase().includes(row.grupo.toLowerCase())
+            );
+            if (group) groupId = group.id;
+          }
+          
+          preview.push({
+            dni: row.dni,
+            name: `${row.nombre} ${row.apellido}`,
+            password: row.contraseña,
+            groupId: groupId,
+            role: 'student',
+            status: 'active',
+            groupIds: groupId ? [groupId] : []
+          });
+        }
+      }
+      
+      setImportPreview(preview);
+      if (errors.length > 0) setImportErrors(errors);
+    } catch (error) {
+      setImportErrors(['Error al procesar el archivo CSV']);
+    }
+  };
+  reader.readAsText(file);
+};
+
+// Import users from preview
+const handleImportUsers = async () => {
+  if (importPreview.length === 0) {
+    alert('No hay usuarios para importar');
+    return;
+  }
+  
+  try {
+    const newUsers = [...users];
+    const newGroups = [...groups];
+    
+    importPreview.forEach(user => {
+      newUsers.push(user);
+      
+      if (user.groupId) {
+        const groupIndex = newGroups.findIndex(g => g.id === user.groupId);
+        if (groupIndex !== -1 && !newGroups[groupIndex].members.includes(user.dni)) {
+          newGroups[groupIndex].members = [...newGroups[groupIndex].members, user.dni];
+        }
+      }
+    });
+    
+    setUsers(newUsers);
+    setGroups(newGroups);
+    
+    await saveToFirebase('users', newUsers);
+    await saveToFirebase('groups', newGroups);
+    
+    setImportFile(null);
+    setImportPreview([]);
+    setImportErrors([]);
+    setShowImportUsersModal(false);
+    
+    alert(`✅ ¡${importPreview.length} usuarios importados exitosamente!`);
+  } catch (error) {
+    alert(`❌ Error al importar: ${error.message}`);
+  }
+};
   // Delete exam
   const handleDeleteExam = async () => {
     if (!examToDelete) return;
@@ -1578,18 +1718,26 @@ const exportResults = () => {
         return (
           <div className="p-6">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-800">👥 Usuarios</h2>
-              <div className="flex space-x-3">
-                <motion.button
-                  onClick={() => setShowAccountSettings(true)}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
-                >
-                  <span className="mr-2">⚙️</span> Mi Cuenta
-                </motion.button>
-              </div>
-            </div>
+  <h2 className="text-2xl font-bold text-gray-800">👥 Usuarios</h2>
+  <div className="flex space-x-3">
+    <motion.button
+      onClick={() => setShowImportUsersModal(true)}
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+      className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
+    >
+      <span className="mr-2">📥</span> Importar Usuarios
+    </motion.button>
+    <motion.button
+      onClick={() => setShowAccountSettings(true)}
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+      className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
+    >
+      <span className="mr-2">⚙️</span> Mi Cuenta
+    </motion.button>
+  </div>
+</div>
             {/* Search Section - Simple and Safe */}
 <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
   <div>
@@ -2055,7 +2203,118 @@ const exportResults = () => {
                 </div>
               </div>
             )}
-
+		            {/* Import Users Modal */}
+            {showImportUsersModal && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl p-6 max-h-[90vh] overflow-y-auto">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold text-gray-800">📥 Importar Usuarios Masivamente</h3>
+                    <button onClick={() => {
+                      setShowImportUsersModal(false);
+                      setImportFile(null);
+                      setImportPreview([]);
+                      setImportErrors([]);
+                    }} className="text-gray-500 hover:text-gray-700">
+                      ✕
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div className="bg-blue-50 p-4 rounded-lg">
+                      <h4 className="font-bold text-lg text-gray-800 mb-2">📋 Instrucciones:</h4>
+                      <ol className="list-decimal list-inside space-y-1 text-gray-700 text-sm">
+                        <li>Descarga la <button onClick={downloadTemplate} className="text-blue-600 hover:underline font-medium">plantilla CSV</button></li>
+                        <li>Llena con datos de tus estudiantes (separado por punto y coma)</li>
+                        <li>Selecciona el archivo y haz clic en "Importar"</li>
+                      </ol>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Seleccionar archivo CSV:</label>
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={handleFileSelect}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    
+                    {importFile && (
+                      <div className="bg-gray-50 p-4 rounded-lg">
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <p className="font-medium">{importFile.name}</p>
+                            <p className="text-xs text-gray-500">{(importFile.size / 1024).toFixed(1)} KB</p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setImportFile(null);
+                              setImportPreview([]);
+                              setImportErrors([]);
+                            }}
+                            className="text-red-600 hover:text-red-800 text-sm font-medium"
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                        
+                        {importPreview.length > 0 && (
+                          <div className="mt-3">
+                            <p className="text-sm font-medium text-gray-700">
+                              ✅ {importPreview.length} usuario{importPreview.length !== 1 ? 's' : ''} listo{importPreview.length !== 1 ? 's' : ''} para importar
+                            </p>
+                          </div>
+                        )}
+                        
+                        {importErrors.length > 0 && (
+                          <div className="mt-3 bg-red-50 p-3 rounded border border-red-200">
+                            <p className="text-sm font-medium text-red-800 mb-1">⚠️ Errores encontrados:</p>
+                            <ul className="list-disc list-inside text-xs text-red-700">
+                              {importErrors.map((err, i) => (
+                                <li key={i}>Fila {err.row}: {err.errors.join(', ')}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
+                      <motion.button
+                        onClick={() => {
+                          setShowImportUsersModal(false);
+                          setImportFile(null);
+                          setImportPreview([]);
+                          setImportErrors([]);
+                        }}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                      >
+                        Cancelar
+                      </motion.button>
+                      <motion.button
+                        onClick={handleImportUsers}
+                        disabled={importPreview.length === 0 || importErrors.length > 0}
+                        whileHover={importPreview.length === 0 || importErrors.length > 0 ? {} : { scale: 1.05 }}
+                        whileTap={importPreview.length === 0 || importErrors.length > 0 ? {} : { scale: 0.95 }}
+                        className={`px-4 py-2 rounded-lg font-medium ${
+                          importPreview.length === 0 || importErrors.length > 0
+                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            : 'bg-green-600 hover:bg-green-700 text-white'
+                        }`}
+                      >
+                        {importErrors.length > 0 
+                          ? 'Corregir errores' 
+                          : importPreview.length === 0
+                            ? 'Selecciona un archivo CSV'
+                            : `Importar ${importPreview.length} usuarios`}
+                      </motion.button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             {/* Approve Student Modal */}
             {showApproveModal && editingUser && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
