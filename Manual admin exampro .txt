@@ -1,0 +1,214 @@
+📘 Manual de Usuario para Administradores - ExamProm
+=====================================================
+
+📌 Índice
+---------
+1. Introducción
+2. Acceso al Sistema
+3. Panel de Administración
+   - 📝 Exámenes
+   - 📚 Grupos
+   - 👥 Usuarios
+   - 📊 Resultados
+   - ⚡ Habilitaciones
+4. Funcionalidades Especiales
+5. Cierre de Sesión
+6. Soporte Técnico
+
+🌟 Introducción
+---------------
+¡Bienvenido al sistema ExamProm! Esta plataforma le permite gestionar exámenes, 
+grupos de estudiantes, usuarios y resultados de manera eficiente y centralizada. 
+Todos los datos se almacenan en la nube, permitiendo acceso desde cualquier 
+dispositivo con conexión a internet.
+
+Características principales:
+✅ Creación y gestión de exámenes con múltiples preguntas
+✅ Administración de grupos y asignación de estudiantes
+✅ Registro y aprobación de usuarios
+✅ Habilitación de exámenes para grupos específicos
+✅ Visualización y exportación de resultados
+✅ Importación masiva de usuarios
+✅ Eliminación selectiva de usuarios
+
+🔐 Acceso al Sistema
+--------------------
+1. Abra su navegador web y diríjase a: https://exampro-app.vercel.app
+2. En la pantalla de inicio, seleccione "👤 Administrador"
+3. Complete los campos:
+   - Usuario: admin
+   - Contraseña: 1234
+4. Haga clic en "Ingresar como Admin"
+
+⚠️ Nota: Por seguridad, se recomienda cambiar la contraseña predeterminada 
+en "Mi Cuenta" después del primer acceso.
+
+🖥️ Panel de Administración
+---------------------------
+Una vez iniciada la sesión, verá un menú lateral con las siguientes secciones:
+
+📝 Exámenes
+-----------
+Para crear un nuevo examen:
+1. Haga clic en "+ Crear Examen"
+2. Complete:
+   - Nombre del examen
+   - Descripción (opcional)
+3. Agregue preguntas:
+   - Haga clic en "+ Agregar Pregunta"
+   - Escriba el texto de la pregunta
+   - Agregue opciones de respuesta (mínimo 2)
+   - Seleccione la opción correcta
+   - Agregue más opciones si es necesario
+4. Haga clic en "Crear Examen"
+
+Para editar o eliminar:
+✏️ Editar: Haga clic en el icono ✏️ junto al examen
+🗑️ Eliminar: Haga clic en el icono 🗑️ y confirme la acción
+
+📚 Grupos
+---------
+Para crear un nuevo grupo:
+1. Haga clic en "+ Crear Grupo"
+2. Complete:
+   - Nombre del grupo (ej: "Grupo A")
+3. Seleccione los estudiantes:
+   - Marque los estudiantes que pertenecerán al grupo
+4. Haga clic en "Crear"
+
+Para editar o eliminar:
+✏️ Editar: Haga clic en ✏️ junto al grupo
+🗑️ Eliminar: Haga clic en 🗑️ y confirme
+
+👥 Usuarios
+-----------
+Gestión de usuarios pendientes:
+- Los estudiantes registrados aparecen en "Usuarios Pendientes de Aprobación"
+- Haga clic en "✅ Aprobar" para activar una cuenta
+- Asigne grupos durante la aprobación
+
+Búsqueda y filtrado:
+- Use el campo "🔍 Buscar por nombre o DNI" para localizar usuarios
+- Filtre por grupo usando el selector "👥 Filtrar por grupo"
+
+Acciones por usuario:
+✏️ Editar: Modificar datos o grupos
+🗑️ Eliminar: Eliminar usuario individualmente
+
+Importación masiva:
+1. Haga clic en "📥 Importar Usuarios"
+2. Descargue la plantilla CSV haciendo clic en "plantilla CSV"
+3. Complete el archivo con los datos de los estudiantes:
+   DNI;Nombre;Apellido;Contraseña;Grupo
+   40000001;Ana;Gómez;ana123;Grupo A
+   40000002;Luis;Rodríguez;luis456;Grupo B
+4. Seleccione el archivo CSV modificado
+5. Verifique la vista previa
+6. Haga clic en "Importar X usuarios"
+
+Eliminación masiva:
+1. Marque los usuarios que desea eliminar usando los checkboxes
+2. Use el checkbox del encabezado para seleccionar/deseleccionar todos los visibles
+3. Haga clic en el botón "🗑️ Eliminar Seleccionados (X)"
+4. Confirme la eliminación en el modal
+
+📊 Resultados
+-------------
+Visualización de resultados:
+1. Filtre por:
+   - Grupo: Seleccione un grupo específico o "Todos los grupos"
+   - Examen: Elija un examen o "Todos los exámenes"
+2. La tabla mostrará:
+   - Nombre del estudiante
+   - Examen realizado
+   - Puntaje obtenido
+   - Fecha de realización
+   - Nota numérica (columna visible)
+
+Exportación a Excel:
+1. Configure los filtros deseados
+2. Haga clic en "📥 Exportar Excel"
+3. Se descargará un archivo resultados_examenes.csv con:
+   - Datos de todos los estudiantes filtrados
+   - Respuestas a cada pregunta
+   - Conteo de respuestas correctas/incorrectas
+   - Nota numérica en la última columna
+
+Ver detalles de un examen:
+- Haga clic en "👁️" junto al resultado para ver:
+  - Preguntas y respuestas del estudiante
+  - Indicadores visuales (✓ correcto, ✗ incorrecto)
+
+⚡ Habilitaciones
+-----------------
+Habilitar un examen para un grupo:
+1. Seleccione:
+   - Examen: El examen a habilitar
+   - Grupo: El grupo que podrá rendir el examen
+2. Marque la casilla si desea que los estudiantes vean su nota al finalizar
+3. Haga clic en "⚡ Habilitar Examen para Grupo"
+
+Gestión de habilitaciones activas:
+- Visualice todas las habilitaciones vigentes
+- 🗑️ Eliminar: Haga clic en 🗑️ junto a la habilitación y confirme
+
+🚀 Funcionalidades Especiales
+------------------------------
+🔍 Búsqueda Avanzada de Usuarios
+- Combine búsqueda por nombre/DNI con filtro por grupo
+- El contador muestra la cantidad de resultados encontrados
+- Use "✕ Limpiar filtros" para restablecer la búsqueda
+
+📥 Importación Masiva de Usuarios
+- Formato requerido: CSV con separador de punto y coma (;)
+- Columnas obligatorias: DNI, Nombre, Apellido, Contraseña, Grupo
+- Validaciones automáticas:
+  - DNI debe tener mínimo 6 caracteres
+  - Nombre y apellido mínimo 2 caracteres
+  - Contraseña mínimo 4 caracteres
+  - Grupo debe coincidir con un grupo existente
+
+🗑️ Eliminación Masiva de Usuarios
+- Seleccione múltiples usuarios con checkboxes
+- El sistema protege al usuario actual (no puede eliminarse a sí mismo)
+- El modal de confirmación muestra:
+  - Lista de usuarios a eliminar
+  - Advertencia sobre eliminación de resultados y remoción de grupos
+  - Opción para cancelar antes de confirmar
+
+🚪 Cierre de Sesión
+-------------------
+1. Haga clic en el botón "🚪 Salir" en la esquina superior derecha
+2. Confirme que desea cerrar la sesión
+3. Será redirigido a la pantalla de inicio de sesión
+
+🔒 Importante: Cierre siempre su sesión al finalizar, especialmente en 
+computadoras compartidas.
+
+📞 Soporte Técnico
+------------------
+Para consultas técnicas o problemas con el sistema:
+
+📧 Contacto: edgardogrinovero@hotmail.com
+📱 Soporte: Lunes a Viernes de 9:00 a 18:00 hs
+
+Antes de contactar, verifique:
+✅ Tiene conexión a internet estable
+✅ Usa un navegador actualizado (Chrome, Firefox, Edge)
+✅ Limpió la caché del navegador si hay problemas de visualización
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+                    ✨ Gracias por usar ExamProm ✨
+                  Sistema de Gestión de Exámenes
+
+                      Power by Grinóvero Edgardo
+
+              © 2026 División Instrucción y Capacitación
+                    Policía de Entre Ríos
+              Todos los derechos reservados
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Versión del Manual: 2.0
+Última actualización: Febrero 2026
