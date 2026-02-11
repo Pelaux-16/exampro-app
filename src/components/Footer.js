@@ -3,26 +3,22 @@ import React from 'react';
 
 function Footer() {
   return (
-    <footer style={{
-      backgroundColor: '#111827',
-      color: '#d1d5db',
-      padding: '1.5rem 0',
-      width: '100%',
-      textAlign: 'center'
-    }}>
-      <div style={{ width: '100%' }}>
-        <p style={{ fontSize: '0.875rem', margin: '0.5rem 0' }}>
-          Power by <span style={{ fontWeight: '600', color: 'white' }}>Grinóvero Edgardo</span> © 2026
-        </p>
-        <p style={{ fontSize: '0.875rem', fontWeight: '500', color: 'white', margin: '0.5rem 0' }}>
-          División Instrucción y Capacitación
-        </p>
-        <p style={{ fontSize: '0.875rem', fontWeight: '500', color: 'white', margin: '0.5rem 0' }}>
-          Policía de Entre Ríos
-        </p>
-        <p style={{ fontSize: '0.75rem', color: '#9ca3af', margin: '0.75rem 0 0 0' }}>
-          Todos los derechos reservados
-        </p>
+    <footer className="bg-gray-900 text-gray-300 py-2 w-full">
+      <div className="w-full px-4">
+        <div className="text-center">
+          <p className="text-xs">
+            Power by <span className="font-semibold text-white">Grinóvero Edgardo</span> © 2026
+          </p>
+          <p className="text-xs font-medium text-white">
+            División Instrucción y Capacitación
+          </p>
+          <p className="text-xs font-medium text-white">
+            Policía de Entre Ríos
+          </p>
+          <p className="text-xs text-gray-400">
+            Todos los derechos reservados
+          </p>
+        </div>
       </div>
     </footer>
   );
