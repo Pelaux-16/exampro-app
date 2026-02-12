@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import Footer from './components/Footer';
 import { db } from './firebase';
 import {
   collection,
@@ -90,6 +89,26 @@ const initialResults = [
   }
 ];
 
+// AGREGADO: Datos iniciales para mensajes por grupo
+const initialMessages = [
+  {
+    id: 1,
+    groupId: 1,
+    title: '¡Bienvenidos al Grupo A!',
+    content: 'Este es un mensaje de bienvenida para el Grupo A. Puedes compartir links, anuncios o información importante aquí.',
+    date: '2026-02-01',
+    author: 'Administrador'
+  },
+  {
+    id: 2,
+    groupId: 2,
+    title: '¡Bienvenidos al Grupo B!',
+    content: 'Este es un mensaje de bienvenida para el Grupo B. Usa esta sección para comunicarte con tus estudiantes.',
+    date: '2026-02-01',
+    author: 'Administrador'
+  }
+];
+
 // Save data to Firebase
 const saveToFirebase = async (collectionName, data) => {
   try {
@@ -149,24 +168,35 @@ export default function App() {
   const [userToDelete, setUserToDelete] = useState(null);
   const [examToDelete, setExamToDelete] = useState(null);
   const [isEditingGroup, setIsEditingGroup] = useState(false);
+  
   // Search states for users
   const [searchQuery, setSearchQuery] = useState('');
   const [searchByGroup, setSearchByGroup] = useState('all');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
   // Multi-delete states
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [showDeleteSelectedModal, setShowDeleteSelectedModal] = useState(false);
+  
   // Import users states
-  const [showImportUsersModal, setShowImportUsersModal] = useState(false); 
-  const [importFile, setImportFile] = useState(null); 
+  const [showImportUsersModal, setShowImportUsersModal] = useState(false);
+  const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState([]);
   const [importErrors, setImportErrors] = useState([]);
+  
+  // AGREGADO: Estados para mensajes
+  const [showCreateMessage, setShowCreateMessage] = useState(false);
+  const [messageTitle, setMessageTitle] = useState('');
+  const [messageContent, setMessageContent] = useState('');
+  
   // Data states - Load from Firebase
   const [exams, setExams] = useState([]);
   const [groups, setGroups] = useState([]);
   const [users, setUsers] = useState([]);
   const [habilitations, setHabilitations] = useState([]);
   const [results, setResults] = useState([]);
+  // AGREGADO: Estado para mensajes
+  const [messages, setMessages] = useState([]);
 
   // Loading state
   const [isLoading, setIsLoading] = useState(true);
@@ -234,12 +264,15 @@ export default function App() {
       const loadedUsers = await loadFromFirebase('users', initialUsers);
       const loadedHabilitations = await loadFromFirebase('habilitations', initialHabilitations);
       const loadedResults = await loadFromFirebase('results', initialResults);
+      // AGREGADO: Cargar mensajes desde Firebase
+      const loadedMessages = await loadFromFirebase('messages', initialMessages);
       
       setExams(loadedExams);
       setGroups(loadedGroups);
       setUsers(loadedUsers);
       setHabilitations(loadedHabilitations);
       setResults(loadedResults);
+      setMessages(loadedMessages);
       
       setIsLoading(false);
     };
@@ -875,236 +908,60 @@ export default function App() {
     setExamToDelete(examId);
     setShowDeleteExamModal(true);
   };
-  // Download template CSV
-const downloadTemplate = () => {
-  const template = `DNI;Nombre;Apellido;Contraseña;Grupo\n12345678;Juan;Pérez;1234;Grupo A\n23456789;María;García;5678;Grupo A\n34567890;Carlos;López;9012;Grupo B`;
-  
-  const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', 'plantilla_usuarios.csv');
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-};
 
-// Handle file selection for import
-const handleFileSelect = (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  
-  setImportFile(file);
-  setImportErrors([]);
-  
-  const reader = new FileReader();
-  reader.onload = (event) => {
-    try {
-      const csvData = event.target.result;
-      const lines = csvData.split('\n').filter(line => line.trim());
-      
-      if (lines.length < 2) {
-        setImportErrors(['El archivo está vacío o no tiene datos']);
-        return;
-      }
-      
-      const headers = lines[0].split(';').map(h => h.trim().toLowerCase());
-      const requiredHeaders = ['dni', 'nombre', 'apellido', 'contraseña', 'grupo'];
-      const missing = requiredHeaders.filter(h => !headers.includes(h));
-      
-      if (missing.length > 0) {
-        setImportErrors([`Faltan columnas: ${missing.join(', ')}`]);
-        return;
-      }
-      
-      const preview = [];
-      const errors = [];
-      
-      for (let i = 1; i < lines.length; i++) {
-        if (!lines[i].trim()) continue;
-        
-        const values = lines[i].split(';').map(v => v.trim());
-        if (values.length < 5) continue;
-        
-        const row = {
-          dni: values[0],
-          nombre: values[1],
-          apellido: values[2],
-          contraseña: values[3],
-          grupo: values[4]
-        };
-        
-        const rowErrors = [];
-        
-        if (row.dni.length < 6) rowErrors.push('DNI muy corto');
-        if (row.nombre.length < 2) rowErrors.push('Nombre inválido');
-        if (row.apellido.length < 2) rowErrors.push('Apellido inválido');
-        if (row.contraseña.length < 4) rowErrors.push('Contraseña muy corta');
-        
-        if (rowErrors.length > 0) {
-          errors.push({ row: i + 1, errors: rowErrors });
-        } else {
-          let groupId = null;
-          if (row.grupo) {
-            const group = groups.find(g => 
-              g.name.toLowerCase().includes(row.grupo.toLowerCase())
-            );
-            if (group) groupId = group.id;
-          }
-          
-          preview.push({
-            dni: row.dni,
-            name: `${row.nombre} ${row.apellido}`,
-            password: row.contraseña,
-            groupId: groupId,
-            role: 'student',
-            status: 'active',
-            groupIds: groupId ? [groupId] : []
-          });
-        }
-      }
-      
-      setImportPreview(preview);
-      if (errors.length > 0) setImportErrors(errors);
-    } catch (error) {
-      setImportErrors(['Error al procesar el archivo CSV']);
-    }
-  };
-  reader.readAsText(file);
-};
-
-// Import users from preview
-const handleImportUsers = async () => {
-  if (importPreview.length === 0) {
-    alert('No hay usuarios para importar');
-    return;
-  }
-  
-  try {
-    const newUsers = [...users];
-    const newGroups = [...groups];
-    
-    importPreview.forEach(user => {
-      newUsers.push(user);
-      
-      if (user.groupId) {
-        const groupIndex = newGroups.findIndex(g => g.id === user.groupId);
-        if (groupIndex !== -1 && !newGroups[groupIndex].members.includes(user.dni)) {
-          newGroups[groupIndex].members = [...newGroups[groupIndex].members, user.dni];
-        }
-      }
-    });
-    
-    setUsers(newUsers);
-    setGroups(newGroups);
-    
-    await saveToFirebase('users', newUsers);
-    await saveToFirebase('groups', newGroups);
-    
-    setImportFile(null);
-    setImportPreview([]);
-    setImportErrors([]);
-    setShowImportUsersModal(false);
-    
-    alert(`✅ ¡${importPreview.length} usuarios importados exitosamente!`);
-  } catch (error) {
-    alert(`❌ Error al importar: ${error.message}`);
-  }
-};
-	// Toggle select single user
-const toggleUserSelection = (dni) => {
-  setSelectedUsers(prev => 
-    prev.includes(dni) 
-      ? prev.filter(id => id !== dni) 
-      : [...prev, dni]
-  );
-};
-
-// Toggle select all visible users
-const toggleAllUsers = () => {
-  // Get currently visible users (after search/filter)
-  const visibleUsers = users.filter(user => {
-    const matchesSearch = !searchQuery || 
-      user.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      user.dni.includes(searchQuery);
-    const matchesGroup = searchByGroup === 'all' || 
-      (user.role === 'student' && user.groupIds.includes(parseInt(searchByGroup)));
-    return matchesSearch && matchesGroup;
-  });
-  
-  if (selectedUsers.length === visibleUsers.length) {
-    setSelectedUsers([]); // Deselect all
-  } else {
-    setSelectedUsers(visibleUsers.map(u => u.dni)); // Select all visible
-  }
-};
-
-// Confirm delete selected users
-const confirmDeleteSelectedUsers = () => {
-  if (selectedUsers.length === 0) return;
-  setShowDeleteSelectedModal(true);
-};
-
-// Delete selected users
-const handleDeleteSelectedUsers = async () => {
-  if (selectedUsers.length === 0) {
-    setShowDeleteSelectedModal(false);
-    return;
-  }
-  
-  try {
-    // Prevent deleting current user
-    const usersToDelete = selectedUsers.filter(dni => dni !== currentUser?.dni);
-    const selfIncluded = selectedUsers.length > usersToDelete.length;
-    
-    if (usersToDelete.length === 0) {
-      alert(selfIncluded ? 'No puedes eliminarte a ti mismo mientras estás conectado' : 'No hay usuarios seleccionados para eliminar');
-      setShowDeleteSelectedModal(false);
-      setSelectedUsers([]);
+  // AGREGADO: Funciones para mensajes
+  // Create message
+  const handleCreateMessage = async () => {
+    if (!selectedGroup || !messageTitle || !messageContent) {
+      alert('Selecciona un grupo y completa el título y contenido del mensaje');
       return;
     }
     
-    // Remove users from groups
-    let updatedGroups = [...groups];
-    usersToDelete.forEach(dni => {
-      updatedGroups = updatedGroups.map(group => ({
-        ...group,
-        members: group.members.filter(memberDni => memberDni !== dni)
-      }));
-    });
+    const groupId = parseInt(selectedGroup);
     
-    // Remove users' results
-    const updatedResults = results.filter(r => !usersToDelete.includes(r.studentDni));
+    try {
+      const newMessage = {
+        id: messages.length > 0 ? Math.max(...messages.map(m => m.id)) + 1 : 1,
+        groupId,
+        title: messageTitle,
+        content: messageContent,
+        date: new Date().toISOString().split('T')[0],
+        author: currentUser?.name || 'Administrador'
+      };
+      
+      const updatedMessages = [...messages, newMessage];
+      setMessages(updatedMessages);
+      await saveToFirebase('messages', updatedMessages);
+      
+      // Reset form
+      setSelectedGroup('');
+      setMessageTitle('');
+      setMessageContent('');
+      setShowCreateMessage(false);
+      
+      alert('Mensaje creado exitosamente');
+    } catch (error) {
+      console.error('Error creating message:', error);
+      alert('Error al crear el mensaje. Por favor, intenta de nuevo.');
+    }
+  };
+
+  // Delete message
+  const handleDeleteMessage = async (messageId) => {
+    if (!window.confirm('¿Estás seguro de que deseas eliminar este mensaje?')) return;
     
-    // Remove users
-    const updatedUsers = users.filter(u => !usersToDelete.includes(u.dni));
-    
-    // Update state
-    setUsers(updatedUsers);
-    setGroups(updatedGroups);
-    setResults(updatedResults);
-    
-    // Save to Firebase
-    await saveToFirebase('users', updatedUsers);
-    await saveToFirebase('groups', updatedGroups);
-    await saveToFirebase('results', updatedResults);
-    
-    // Reset selection and close modal
-    setSelectedUsers([]);
-    setShowDeleteSelectedModal(false);
-    
-    const message = selfIncluded 
-      ? `✅ ${usersToDelete.length} usuario${usersToDelete.length !== 1 ? 's' : ''} eliminado${usersToDelete.length !== 1 ? 's' : ''} exitosamente.\n(No puedes eliminarte a ti mismo)`
-      : `✅ ${usersToDelete.length} usuario${usersToDelete.length !== 1 ? 's' : ''} eliminado${usersToDelete.length !== 1 ? 's' : ''} exitosamente`;
-    
-    alert(message);
-  } catch (error) {
-    console.error('Error deleting selected users:', error);
-    alert('Error al eliminar los usuarios seleccionados. Por favor, intenta de nuevo.');
-    setShowDeleteSelectedModal(false);
-  }
-};
+    try {
+      const updatedMessages = messages.filter(m => m.id !== messageId);
+      setMessages(updatedMessages);
+      await saveToFirebase('messages', updatedMessages);
+      
+      alert('Mensaje eliminado exitosamente');
+    } catch (error) {
+      console.error('Error deleting message:', error);
+      alert('Error al eliminar el mensaje. Por favor, intenta de nuevo.');
+    }
+  };
+
   // Delete exam
   const handleDeleteExam = async () => {
     if (!examToDelete) return;
@@ -1140,122 +997,353 @@ const handleDeleteSelectedUsers = async () => {
     }
   };
 
-  // Export results to CSV - FINAL CORRECTED VERSION WITH NUMERIC NOTE
-  // Export results to CSV - CORREGIDA Y MEJORADA
-const exportResults = () => {
-  try {
-    // Filter results by exam
-    let filteredResults = [...results];
-    if (selectedResultExam !== 'all') {
-      const examIdNum = parseInt(selectedResultExam);
-      filteredResults = filteredResults.filter(r => r.examId === examIdNum);
-    }
-    // Filter results by group
-    if (selectedResultGroup !== 'all') {
-      const groupIdNum = parseInt(selectedResultGroup);
-      filteredResults = filteredResults.filter(r => {
-        const student = users.find(u => u.dni === r.studentDni);
-        return student && student.groupIds.includes(groupIdNum);
-      });
-    }
+  // Download template CSV
+  const downloadTemplate = () => {
+    const template = `DNI;Nombre;Apellido;Contraseña;Grupo\n12345678;Juan;Pérez;1234;Grupo A\n23456789;María;García;5678;Grupo A\n34567890;Carlos;López;9012;Grupo B`;
     
-    if (filteredResults.length === 0) {
-      alert('No hay resultados para exportar');
-      return;
-    }
-    
-    // Get headers
-    const headers = ['Estudiante', 'Examen', 'Puntaje', 'Fecha'];
-    
-    // Get all unique question IDs from filtered exams
-    const questionIds = [...new Set(filteredResults.flatMap(result => {
-      const exam = exams.find(e => e.id === result.examId);
-      return exam ? exam.questions.map(q => q.id) : [];
-    }))];
-    
-    // Add question headers with sequential numbers
-    const questionHeaders = questionIds.map((qId, index) => `Pregunta ${index + 1}`);
-    const fullHeaders = [
-      ...headers, 
-      ...questionHeaders, 
-      'Respuestas Correctas', 
-      'Respuestas Incorrectas',
-      'Nota Numérica'
-    ];
-    
-    // Build rows
-    const rows = filteredResults.map(result => {
-      const student = users.find(u => u.dni === result.studentDni);
-      const exam = exams.find(e => e.id === result.examId);
-      
-      // Get answers for each question (manejar caso donde no hay examen)
-      const answerColumns = questionIds.map(qId => {
-        if (!exam) return 'Examen no encontrado';
-        
-        const question = exam.questions.find(q => q.id === qId);
-        if (!question) return 'Pregunta no encontrada';
-        
-        const selectedOptionId = result.answers?.[qId];
-        if (!selectedOptionId) return 'No respondida';
-        
-        const selectedOption = question.options.find(o => o.id === selectedOptionId);
-        const isCorrect = selectedOptionId === question.correctOptionId;
-        
-        return `${selectedOption?.text || 'No respondida'}${isCorrect ? ' ✓' : ' ✗'}`;
-      });
-      
-      // Count correct and incorrect answers
-      let correctCount = 0;
-      let incorrectCount = 0;
-      
-      if (exam && result.answers) {
-        exam.questions.forEach(question => {
-          if (result.answers[question.id] === question.correctOptionId) {
-            correctCount++;
-          } else {
-            incorrectCount++;
-          }
-        });
-      }
-      
-      return [
-        student?.name || result.studentDni || 'Usuario no encontrado',
-        exam?.name || `Examen ${result.examId}`,
-        `${result.score || 0}/${result.total || 10} (${((result.score || 0) / (result.total || 10) * 100).toFixed(0)}%)`,
-        result.date || 'Sin fecha',
-        ...answerColumns,
-        correctCount,
-        incorrectCount,
-        result.score || 0 // ← NOTA NUMÉRICA
-      ];
-    });
-    
-    // Join headers and rows with semicolon (;) as delimiter
-    const csvContent = '\ufeff' + [
-      fullHeaders.join(';'),
-      ...rows.map(row => row.map(cell => 
-        typeof cell === 'string' && cell.includes(';') 
-          ? `"${cell.replace(/"/g, '""')}"`
-          : cell
-      ).join(';'))
-    ].join('\r\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `resultados_examenes_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', 'plantilla_usuarios.csv');
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // Handle file selection for import
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
     
-    alert(`✅ Se exportaron ${filteredResults.length} resultados exitosamente`);
-  } catch (error) {
-    console.error('Error exporting results:', error);
-    alert(`❌ Error al exportar: ${error.message}\n\nPor favor, verifica que todos los exámenes tengan preguntas válidas.`);
-  }
-};
+    setImportFile(file);
+    setImportErrors([]);
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const csvData = event.target.result;
+        const lines = csvData.split('\n').filter(line => line.trim());
+        
+        if (lines.length < 2) {
+          setImportErrors(['El archivo está vacío o no tiene datos']);
+          return;
+        }
+        
+        const headers = lines[0].split(';').map(h => h.trim().toLowerCase());
+        const requiredHeaders = ['dni', 'nombre', 'apellido', 'contraseña', 'grupo'];
+        const missing = requiredHeaders.filter(h => !headers.includes(h));
+        
+        if (missing.length > 0) {
+          setImportErrors([`Faltan columnas: ${missing.join(', ')}`]);
+          return;
+        }
+        
+        const preview = [];
+        const errors = [];
+        
+        for (let i = 1; i < lines.length; i++) {
+          if (!lines[i].trim()) continue;
+          
+          const values = lines[i].split(';').map(v => v.trim());
+          if (values.length < 5) continue;
+          
+          const row = {
+            dni: values[0],
+            nombre: values[1],
+            apellido: values[2],
+            contraseña: values[3],
+            grupo: values[4]
+          };
+          
+          const rowErrors = [];
+          
+          if (row.dni.length < 6) rowErrors.push('DNI muy corto');
+          if (row.nombre.length < 2) rowErrors.push('Nombre inválido');
+          if (row.apellido.length < 2) rowErrors.push('Apellido inválido');
+          if (row.contraseña.length < 4) rowErrors.push('Contraseña muy corta');
+          
+          if (rowErrors.length > 0) {
+            errors.push({ row: i + 1, errors: rowErrors });
+          } else {
+            let groupId = null;
+            if (row.grupo) {
+              const group = groups.find(g => 
+                g.name.toLowerCase().includes(row.grupo.toLowerCase())
+              );
+              if (group) groupId = group.id;
+            }
+            
+            preview.push({
+              dni: row.dni,
+              name: `${row.nombre} ${row.apellido}`,
+              password: row.contraseña,
+              groupId: groupId,
+              role: 'student',
+              status: 'active',
+              groupIds: groupId ? [groupId] : []
+            });
+          }
+        }
+        
+        setImportPreview(preview);
+        if (errors.length > 0) setImportErrors(errors);
+      } catch (error) {
+        setImportErrors(['Error al procesar el archivo CSV']);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Import users from preview
+  const handleImportUsers = async () => {
+    if (importPreview.length === 0) {
+      alert('No hay usuarios para importar');
+      return;
+    }
+    
+    try {
+      const newUsers = [...users];
+      const newGroups = [...groups];
+      
+      importPreview.forEach(user => {
+        newUsers.push(user);
+        
+        if (user.groupId) {
+          const groupIndex = newGroups.findIndex(g => g.id === user.groupId);
+          if (groupIndex !== -1 && !newGroups[groupIndex].members.includes(user.dni)) {
+            newGroups[groupIndex].members = [...newGroups[groupIndex].members, user.dni];
+          }
+        }
+      });
+
+      setUsers(newUsers);
+      setGroups(newGroups);
+
+      await saveToFirebase('users', newUsers);
+      await saveToFirebase('groups', newGroups);
+
+      setImportFile(null);
+      setImportPreview([]);
+      setImportErrors([]);
+      setShowImportUsersModal(false);
+
+      alert(`✅ ¡${importPreview.length} usuarios importados exitosamente!`);
+    } catch (error) {
+      alert(`❌ Error al importar: ${error.message}`);
+    }
+  };
+
+  // Toggle select single user
+  const toggleUserSelection = (dni) => {
+    setSelectedUsers(prev => 
+      prev.includes(dni) 
+        ? prev.filter(id => id !== dni) 
+        : [...prev, dni]
+    );
+  };
+
+  // Toggle select all visible users
+  const toggleAllUsers = () => {
+    // Get currently visible users (after search/filter)
+    const visibleUsers = users.filter(user => {
+      const matchesSearch = !searchQuery || 
+        user.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        user.dni.includes(searchQuery);
+      const matchesGroup = searchByGroup === 'all' || 
+        (user.role === 'student' && user.groupIds.includes(parseInt(searchByGroup)));
+      return matchesSearch && matchesGroup;
+    });
+    
+    if (selectedUsers.length === visibleUsers.length) {
+      setSelectedUsers([]); // Deselect all
+    } else {
+      setSelectedUsers(visibleUsers.map(u => u.dni)); // Select all visible
+    }
+  };
+
+  // Confirm delete selected users
+  const confirmDeleteSelectedUsers = () => {
+    if (selectedUsers.length === 0) return;
+    setShowDeleteSelectedModal(true);
+  };
+
+  // Delete selected users
+  const handleDeleteSelectedUsers = async () => {
+    if (selectedUsers.length === 0) {
+      setShowDeleteSelectedModal(false);
+      return;
+    }
+    
+    try {
+      // Prevent deleting current user
+      const usersToDelete = selectedUsers.filter(dni => dni !== currentUser?.dni);
+      const selfIncluded = selectedUsers.length > usersToDelete.length;
+      
+      if (usersToDelete.length === 0) {
+        alert(selfIncluded ? 'No puedes eliminarte a ti mismo mientras estás conectado' : 'No hay usuarios seleccionados para eliminar');
+        setShowDeleteSelectedModal(false);
+        setSelectedUsers([]);
+        return;
+      }
+      
+      // Remove users from groups
+      let updatedGroups = [...groups];
+      usersToDelete.forEach(dni => {
+        updatedGroups = updatedGroups.map(group => ({
+          ...group,
+          members: group.members.filter(memberDni => memberDni !== dni)
+        }));
+      });
+
+      // Remove users' results
+      const updatedResults = results.filter(r => !usersToDelete.includes(r.studentDni));
+
+      // Remove users
+      const updatedUsers = users.filter(u => !usersToDelete.includes(u.dni));
+
+      // Update state
+      setUsers(updatedUsers);
+      setGroups(updatedGroups);
+      setResults(updatedResults);
+
+      // Save to Firebase
+      await saveToFirebase('users', updatedUsers);
+      await saveToFirebase('groups', updatedGroups);
+      await saveToFirebase('results', updatedResults);
+
+      // Reset selection and close modal
+      setSelectedUsers([]);
+      setShowDeleteSelectedModal(false);
+
+      const message = selfIncluded 
+        ? `✅ ${usersToDelete.length} usuario${usersToDelete.length !== 1 ? 's' : ''} eliminado${usersToDelete.length !== 1 ? 's' : ''} exitosamente.\n(No puedes eliminarte a ti mismo)`
+        : `✅ ${usersToDelete.length} usuario${usersToDelete.length !== 1 ? 's' : ''} eliminado${usersToDelete.length !== 1 ? 's' : ''} exitosamente`;
+
+      alert(message);
+    } catch (error) {
+      console.error('Error deleting selected users:', error);
+      alert('Error al eliminar los usuarios seleccionados. Por favor, intenta de nuevo.');
+      setShowDeleteSelectedModal(false);
+    }
+  };
+
+  // Export results to CSV - CORREGIDA Y MEJORADA
+  const exportResults = () => {
+    try {
+      // Filter results by exam
+      let filteredResults = [...results];
+      if (selectedResultExam !== 'all') {
+        const examIdNum = parseInt(selectedResultExam);
+        filteredResults = filteredResults.filter(r => r.examId === examIdNum);
+      }
+      // Filter results by group
+      if (selectedResultGroup !== 'all') {
+        const groupIdNum = parseInt(selectedResultGroup);
+        filteredResults = filteredResults.filter(r => {
+          const student = users.find(u => u.dni === r.studentDni);
+          return student && student.groupIds.includes(groupIdNum);
+        });
+      }
+      
+      if (filteredResults.length === 0) {
+        alert('No hay resultados para exportar');
+        return;
+      }
+      
+      // Get headers
+      const headers = ['Estudiante', 'Examen', 'Puntaje', 'Fecha'];
+      
+      // Get all unique question IDs from filtered exams
+      const questionIds = [...new Set(filteredResults.flatMap(result => {
+        const exam = exams.find(e => e.id === result.examId);
+        return exam ? exam.questions.map(q => q.id) : [];
+      }))];
+      
+      // Add question headers with sequential numbers
+      const questionHeaders = questionIds.map((qId, index) => `Pregunta ${index + 1}`);
+      const fullHeaders = [
+        ...headers, 
+        ...questionHeaders, 
+        'Respuestas Correctas', 
+        'Respuestas Incorrectas',
+        'Nota Numérica'
+      ];
+      
+      // Build rows
+      const rows = filteredResults.map(result => {
+        const student = users.find(u => u.dni === result.studentDni);
+        const exam = exams.find(e => e.id === result.examId);
+        
+        // Get answers for each question (manejar caso donde no hay examen)
+        const answerColumns = questionIds.map(qId => {
+          if (!exam) return 'Examen no encontrado';
+          
+          const question = exam.questions.find(q => q.id === qId);
+          if (!question) return 'Pregunta no encontrada';
+          
+          const selectedOptionId = result.answers?.[qId];
+          if (!selectedOptionId) return 'No respondida';
+          
+          const selectedOption = question.options.find(o => o.id === selectedOptionId);
+          const isCorrect = selectedOptionId === question.correctOptionId;
+          
+          return `${selectedOption?.text || 'No respondida'}${isCorrect ? ' ✓' : ' ✗'}`;
+        });
+        
+        // Count correct and incorrect answers
+        let correctCount = 0;
+        let incorrectCount = 0;
+        
+        if (exam && result.answers) {
+          exam.questions.forEach(question => {
+            if (result.answers[question.id] === question.correctOptionId) {
+              correctCount++;
+            } else {
+              incorrectCount++;
+            }
+          });
+        }
+        
+        return [
+          student?.name || result.studentDni || 'Usuario no encontrado',
+          exam?.name || `Examen ${result.examId}`,
+          `${result.score || 0}/${result.total || 10} (${((result.score || 0) / (result.total || 10) * 100).toFixed(0)}%)`,
+          result.date || 'Sin fecha',
+          ...answerColumns,
+          correctCount,
+          incorrectCount,
+          result.score || 0 // ← NOTA NUMÉRICA
+        ]; 
+      });
+      
+      // Join headers and rows with semicolon (;) as delimiter
+      const csvContent = '\ufeff' + [
+        fullHeaders.join(';'),
+        ...rows.map(row => row.map(cell => 
+          typeof cell === 'string' && cell.includes(';') 
+            ? `"${cell.replace(/"/g, '""')}"`
+            : cell
+        ).join(';'))
+      ].join('\r\n');
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `resultados_examenes_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      alert(`✅ Se exportaron ${filteredResults.length} resultados exitosamente`);
+    } catch (error) {
+      console.error('Error exporting results:', error);
+      alert(`❌ Error al exportar: ${error.message}\n\nPor favor, verifica que todos los exámenes tengan preguntas válidas.`);
+    }
+  };
 
   // Student dashboard - get available exams
   const getAvailableExams = () => {
@@ -1301,7 +1389,9 @@ const exportResults = () => {
             { id: 'groups', label: '📚 Grupos', icon: '📚' },
             { id: 'users', label: '👥 Usuarios', icon: '👥' },
             { id: 'results', label: '📊 Resultados', icon: '📊' },
-            { id: 'enable', label: '⚡ Habilitaciones', icon: '⚡' }
+            { id: 'enable', label: '⚡ Habilitaciones', icon: '⚡' },
+            // AGREGADO: Nuevo item en sidebar para mensajes
+            { id: 'messages', label: '📨 Mensajes', icon: '📨' }
           ].map(item => (
             <motion.li
               key={item.id}
@@ -1815,65 +1905,67 @@ const exportResults = () => {
         return (
           <div className="p-6">
             <div className="flex justify-between items-center mb-6">
-  <h2 className="text-2xl font-bold text-gray-800">👥 Usuarios</h2>
-  <div className="flex space-x-3">
-    {selectedUsers.length > 0 ? (
-      <motion.button
-        onClick={confirmDeleteSelectedUsers}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg flex items-center animate-pulse"
-      >
-        <span className="mr-2">🗑️</span> Eliminar Seleccionados ({selectedUsers.length})
-      </motion.button>
-    ) : (
-      <>
-        <motion.button
-          onClick={() => setShowImportUsersModal(true)}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
-        >
-          <span className="mr-2">📥</span> Importar Usuarios
-        </motion.button>
-        <motion.button
-          onClick={() => setShowAccountSettings(true)}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
-        >
-          <span className="mr-2">⚙️</span> Mi Cuenta
-        </motion.button>
-      </>
-    )}
-  </div>
-</div>
+              <h2 className="text-2xl font-bold text-gray-800">👥 Usuarios</h2>
+              <div className="flex space-x-3">
+                {selectedUsers.length > 0 ? (
+                  <motion.button
+                    onClick={confirmDeleteSelectedUsers}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg flex items-center animate-pulse"
+                  >
+                    <span className="mr-2">🗑️</span> Eliminar Seleccionados ({selectedUsers.length})
+                  </motion.button>
+                ) : (
+                  <>
+                    <motion.button
+                      onClick={() => setShowImportUsersModal(true)}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
+                    >
+                      <span className="mr-2">📥</span> Importar Usuarios
+                    </motion.button>
+                    <motion.button
+                      onClick={() => setShowAccountSettings(true)}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
+                    >
+                      <span className="mr-2">⚙️</span> Mi Cuenta
+                    </motion.button>
+                  </>
+                )}
+              </div>
+            </div>
+
             {/* Search Section - Simple and Safe */}
-<div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-1">🔍 Buscar por nombre o DNI</label>
-    <input
-      type="text"
-      value={searchQuery}
-      onChange={(e) => setSearchQuery(e.target.value)}
-      placeholder="Ej: Juan o 12345678"
-      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-    />
-  </div>
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-1">👥 Filtrar por grupo</label>
-    <select
-      value={searchByGroup}
-      onChange={(e) => setSearchByGroup(e.target.value)}
-      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-    >
-      <option value="all">Todos los grupos</option>
-      {groups.map(group => (
-        <option key={group.id} value={group.id}>{group.name}</option>
-      ))}
-    </select>
-  </div>
-</div>
+            <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">🔍 Buscar por nombre o DNI</label>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Ej: Juan o 12345678"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">👥 Filtrar por grupo</label>
+                <select
+                  value={searchByGroup}
+                  onChange={(e) => setSearchByGroup(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="all">Todos los grupos</option>
+                  {groups.map(group => (
+                    <option key={group.id} value={group.id}>{group.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             {/* Pending Users Section */}
             <div className="mb-8">
               <h3 className="text-xl font-bold text-gray-800 mb-4">Usuarios Pendientes de Aprobación</h3>
@@ -1907,137 +1999,137 @@ const exportResults = () => {
 
             <div className="overflow-x-auto bg-white rounded-xl shadow-md border border-gray-100">
               <table className="min-w-full divide-y divide-gray-200">
-                	<thead className="bg-gray-50">
-  <tr>
-    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
-      <input
-        type="checkbox"
-        checked={selectedUsers.length > 0}
-        onChange={toggleAllUsers}
-        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-        title={selectedUsers.length > 0 ? "Deseleccionar todos" : "Seleccionar todos los visibles"}
-      />
-    </th>
-    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DNI</th>
-    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
-    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rol</th>
-    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grupos</th>
-    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
-    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
-  </tr>
-</thead>
-               <tbody className="bg-white divide-y divide-gray-200">
-  {users
-    .filter(user => {
-      const matchesSearch = !searchQuery || 
-        user.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        user.dni.includes(searchQuery);
-      const matchesGroup = searchByGroup === 'all' || 
-        (user.role === 'student' && user.groupIds.includes(parseInt(searchByGroup)));
-      return matchesSearch && matchesGroup;
-    })
-    .map((user, index) => {
-      const isSelected = selectedUsers.includes(user.dni);
-      return (
-        <tr 
-          key={index} 
-          className={`hover:bg-gray-50 ${isSelected ? 'bg-blue-50' : ''}`}
-        >
-          <td className="px-4 py-4 whitespace-nowrap w-12">
-            <input
-              type="checkbox"
-              checked={isSelected}
-              onChange={() => toggleUserSelection(user.dni)}
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              disabled={user.dni === currentUser?.dni}
-              title={user.dni === currentUser?.dni ? "No puedes seleccionarte a ti mismo" : ""}
-            />
-          </td>
-          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.dni}</td>
-          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.name}</td>
-          <td className="px-6 py-4 whitespace-nowrap">
-            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-              user.role === 'admin'
-                ? 'bg-purple-100 text-purple-800'
-                : 'bg-blue-100 text-blue-800'
-            }`}>
-              {user.role === 'admin' ? 'Administrador' : 'Estudiante'}
-            </span>
-          </td>
-          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-            {user.role === 'student' && user.groupIds.length > 0 ? (
-              <div className="flex flex-wrap gap-1">
-                {user.groupIds.map(groupId => {
-                  const group = groups.find(g => g.id === groupId);
-                  return group ? (
-                    <span key={groupId} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
-                      {group.name}
-                    </span>
-                  ) : null;
-                })}
-              </div>
-            ) : (
-              '-'
-            )}
-          </td>
-          <td className="px-6 py-4 whitespace-nowrap">
-            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-              user.status === 'active'
-                ? 'bg-green-100 text-green-800'
-                : 'bg-yellow-100 text-yellow-800'
-            }`}>
-              {user.status === 'active' ? 'Activo' : 'Pendiente'}
-            </span>
-          </td>
-          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 space-x-3">
-            {user.status === 'pending' && user.role === 'student' && (
-              <motion.button
-                onClick={() => handleApproveStudent(user.dni)}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="text-green-600 hover:text-green-800 font-medium"
-                title="Aprobar estudiante"
-              >
-                ✅
-              </motion.button>
-            )}
-            <motion.button
-              onClick={() => {
-                setEditingUser(user);
-                setEditName(user.name);
-                setEditDni(user.dni);
-                setEditPassword('');
-                setEditRole(user.role);
-                setEditGroups(user.groupIds || []);
-                setEditStatus(user.status);
-                setShowEditUser(true);
-              }}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="text-blue-600 hover:text-blue-900"
-              title="Editar"
-            >
-              ✏️
-            </motion.button>
-            {user.dni !== currentUser.dni && (
-              <motion.button
-                onClick={() => {
-                  setUserToDelete(user);
-                  setShowDeleteUserModal(true);
-                }}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="text-red-600 hover:text-red-900"
-                title="Eliminar"
-              >
-                🗑️
-              </motion.button>
-            )}
-          </td>
-        </tr>
-      );
-    })}
-</tbody>
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+                      <input
+                        type="checkbox"
+                        checked={selectedUsers.length > 0}
+                        onChange={toggleAllUsers}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        title={selectedUsers.length > 0 ? "Deseleccionar todos" : "Seleccionar todos los visibles"}
+                      />
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DNI</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rol</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grupos</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {users
+                    .filter(user => {
+                      const matchesSearch = !searchQuery || 
+                        user.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                        user.dni.includes(searchQuery);
+                      const matchesGroup = searchByGroup === 'all' || 
+                        (user.role === 'student' && user.groupIds.includes(parseInt(searchByGroup)));
+                      return matchesSearch && matchesGroup;
+                    })
+                    .map((user, index) => {
+                      const isSelected = selectedUsers.includes(user.dni);
+                      return (
+                        <tr 
+                          key={index} 
+                          className={`hover:bg-gray-50 ${isSelected ? 'bg-blue-50' : ''}`}
+                        >
+                          <td className="px-4 py-4 whitespace-nowrap w-12">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleUserSelection(user.dni)}
+                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                              disabled={user.dni === currentUser?.dni}
+                              title={user.dni === currentUser?.dni ? "No puedes seleccionarte a ti mismo" : ""}
+                            />
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.dni}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{user.name}</td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                              user.role === 'admin'
+                                ? 'bg-purple-100 text-purple-800'
+                                : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {user.role === 'admin' ? 'Administrador' : 'Estudiante'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {user.role === 'student' && user.groupIds.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {user.groupIds.map(groupId => {
+                                  const group = groups.find(g => g.id === groupId);
+                                  return group ? (
+                                    <span key={groupId} className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+                                      {group.name}
+                                    </span>
+                                  ) : null;
+                                })}
+                              </div>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                              user.status === 'active'
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-yellow-100 text-yellow-800'
+                            }`}>
+                              {user.status === 'active' ? 'Activo' : 'Pendiente'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 space-x-3">
+                            {user.status === 'pending' && user.role === 'student' && (
+                              <motion.button
+                                onClick={() => handleApproveStudent(user.dni)}
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                className="text-green-600 hover:text-green-800 font-medium"
+                                title="Aprobar estudiante"
+                              >
+                                ✅
+                              </motion.button>
+                            )}
+                            <motion.button
+                              onClick={() => {
+                                setEditingUser(user);
+                                setEditName(user.name);
+                                setEditDni(user.dni);
+                                setEditPassword('');
+                                setEditRole(user.role);
+                                setEditGroups(user.groupIds || []);
+                                setEditStatus(user.status);
+                                setShowEditUser(true);
+                              }}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              className="text-blue-600 hover:text-blue-900"
+                              title="Editar"
+                            >
+                              ✏️
+                            </motion.button>
+                            {user.dni !== currentUser.dni && (
+                              <motion.button
+                                onClick={() => {
+                                  setUserToDelete(user);
+                                  setShowDeleteUserModal(true);
+                                }}
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                className="text-red-600 hover:text-red-900"
+                                title="Eliminar"
+                              >
+                                🗑️
+                              </motion.button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
               </table>
             </div>
 
@@ -2334,7 +2426,8 @@ const exportResults = () => {
                 </div>
               </div>
             )}
-		            {/* Import Users Modal */}
+
+            {/* Import Users Modal */}
             {showImportUsersModal && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl p-6 max-h-[90vh] overflow-y-auto">
@@ -2349,7 +2442,7 @@ const exportResults = () => {
                       ✕
                     </button>
                   </div>
-                  
+
                   <div className="space-y-4">
                     <div className="bg-blue-50 p-4 rounded-lg">
                       <h4 className="font-bold text-lg text-gray-800 mb-2">📋 Instrucciones:</h4>
@@ -2359,7 +2452,7 @@ const exportResults = () => {
                         <li>Selecciona el archivo y haz clic en "Importar"</li>
                       </ol>
                     </div>
-                    
+
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Seleccionar archivo CSV:</label>
                       <input
@@ -2369,7 +2462,7 @@ const exportResults = () => {
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
-                    
+
                     {importFile && (
                       <div className="bg-gray-50 p-4 rounded-lg">
                         <div className="flex justify-between items-start mb-3">
@@ -2388,7 +2481,7 @@ const exportResults = () => {
                             Eliminar
                           </button>
                         </div>
-                        
+
                         {importPreview.length > 0 && (
                           <div className="mt-3">
                             <p className="text-sm font-medium text-gray-700">
@@ -2396,7 +2489,7 @@ const exportResults = () => {
                             </p>
                           </div>
                         )}
-                        
+
                         {importErrors.length > 0 && (
                           <div className="mt-3 bg-red-50 p-3 rounded border border-red-200">
                             <p className="text-sm font-medium text-red-800 mb-1">⚠️ Errores encontrados:</p>
@@ -2409,7 +2502,7 @@ const exportResults = () => {
                         )}
                       </div>
                     )}
-                    
+
                     <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
                       <motion.button
                         onClick={() => {
@@ -2446,7 +2539,8 @@ const exportResults = () => {
                 </div>
               </div>
             )}
-			            {/* Delete Selected Users Modal */}
+
+            {/* Delete Selected Users Modal */}
             {showDeleteSelectedModal && selectedUsers.length > 0 && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
@@ -2464,7 +2558,7 @@ const exportResults = () => {
                       ¿Estás seguro de que deseas eliminar <span className="font-bold">{selectedUsers.length}</span> usuario{selectedUsers.length !== 1 ? 's' : ''}?<br />
                       <span className="text-red-600 font-medium">Esta acción no se puede deshacer.</span>
                     </p>
-                    
+
                     <div className="bg-blue-50 p-3 rounded-lg max-h-48 overflow-y-auto border border-blue-200">
                       <p className="font-medium text-sm text-blue-800 mb-2">Usuarios seleccionados:</p>
                       <ul className="space-y-1 text-sm">
@@ -2485,7 +2579,7 @@ const exportResults = () => {
                           ))}
                       </ul>
                     </div>
-                    
+
                     <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
                       <p className="text-sm text-yellow-800">
                         ⚠️ Se eliminarán también:
@@ -2495,7 +2589,7 @@ const exportResults = () => {
                         </ul>
                       </p>
                     </div>
-                    
+
                     <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
                       <motion.button
                         onClick={() => {
@@ -2521,6 +2615,7 @@ const exportResults = () => {
                 </div>
               </div>
             )}
+
             {/* Approve Student Modal */}
             {showApproveModal && editingUser && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -2939,6 +3034,159 @@ const exportResults = () => {
           </div>
         );
 
+      // AGREGADO: Caso para mensajes
+      case 'messages':
+        return (
+          <div className="p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">📨 Mensajes por Grupo</h2>
+              <motion.button
+                onClick={() => {
+                  setSelectedGroup('');
+                  setMessageTitle('');
+                  setMessageContent('');
+                  setShowCreateMessage(true);
+                }}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
+              >
+                <span className="mr-2">+</span> Crear Mensaje
+              </motion.button>
+            </div>
+
+            <div className="space-y-4">
+              {groups.map(group => {
+                const groupMessages = messages.filter(m => m.groupId === group.id);
+                if (groupMessages.length === 0) return null;
+                
+                return (
+                  <div key={group.id} className="bg-white rounded-xl shadow-md p-5 border border-gray-100">
+                    <div className="flex justify-between items-start mb-3">
+                      <h3 className="font-bold text-lg text-gray-800">📁 {group.name}</h3>
+                      <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                        {groupMessages.length} mensaje{groupMessages.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div className="space-y-3">
+                      {groupMessages.map(message => (
+                        <div key={message.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <h4 className="font-bold text-gray-800 mb-1">{message.title}</h4>
+                              <div className="text-sm text-gray-600 mb-2 whitespace-pre-wrap">
+                                {message.content}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                <span className="font-medium">{message.author}</span> • {message.date}
+                              </div>
+                            </div>
+                            <motion.button
+                              onClick={() => handleDeleteMessage(message.id)}
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              className="text-red-500 hover:text-red-700 ml-3"
+                              title="Eliminar mensaje"
+                            >
+                              🗑️
+                            </motion.button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* No messages */}
+            {messages.length === 0 && (
+              <div className="text-center py-12 text-gray-500">
+                <div className="text-4xl mb-4">📭</div>
+                <h3 className="text-lg font-medium mb-2">No hay mensajes</h3>
+                <p>Crea el primer mensaje para comunicarte con tus grupos</p>
+              </div>
+            )}
+
+            {/* Create Message Modal */}
+            {showCreateMessage && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold text-gray-800">📨 Crear Mensaje</h3>
+                    <button onClick={() => {
+                      setShowCreateMessage(false);
+                      setSelectedGroup('');
+                      setMessageTitle('');
+                      setMessageContent('');
+                    }} className="text-gray-500 hover:text-gray-700">
+                      ✕
+                    </button>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
+                      <select
+                        value={selectedGroup}
+                        onChange={(e) => setSelectedGroup(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="">Seleccionar grupo...</option>
+                        {groups.map(group => (
+                          <option key={group.id} value={group.id}>{group.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Título del Mensaje</label>
+                      <input
+                        type="text"
+                        value={messageTitle}
+                        onChange={(e) => setMessageTitle(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Ej: Recordatorio importante"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Contenido del Mensaje</label>
+                      <textarea
+                        value={messageContent}
+                        onChange={(e) => setMessageContent(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        rows="6"
+                        placeholder="Escribe tu mensaje aquí. Puedes incluir links, anuncios o información importante."
+                      />
+                    </div>
+                    <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
+                      <motion.button
+                        onClick={() => {
+                          setShowCreateMessage(false);
+                          setSelectedGroup('');
+                          setMessageTitle('');
+                          setMessageContent('');
+                        }}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        Cancelar
+                      </motion.button>
+                      <motion.button
+                        onClick={handleCreateMessage}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        Crear Mensaje
+                      </motion.button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
       default:
         return null;
     }
@@ -2949,14 +3197,14 @@ const exportResults = () => {
     if (currentExam) {
       return (
         <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
+          <motion.button
+            onClick={() => setCurrentExam(null)}
+            whileHover={{ x: -5 }}
+            className="mb-6 flex items-center text-blue-600 hover:text-blue-800 font-medium"
+          >
+            <span className="mr-2">←</span> Volver a mis exámenes
+          </motion.button>
           <div className="max-w-3xl mx-auto">
-            <motion.button
-              onClick={() => setCurrentExam(null)}
-              whileHover={{ x: -5 }}
-              className="mb-6 flex items-center text-blue-600 hover:text-blue-800 font-medium"
-            >
-              <span className="mr-2">←</span> Volver a mis exámenes
-            </motion.button>
             <div className="bg-white rounded-xl shadow-md overflow-hidden">
               <div className="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 text-white">
                 <h1 className="text-2xl font-bold">{currentExam.name}</h1>
@@ -3086,6 +3334,41 @@ const exportResults = () => {
               </motion.button>
             </div>
           </div>
+
+          {/* AGREGADO: Sección de mensajes para estudiantes */}
+          {currentUser?.groupIds?.length > 0 && (
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-gray-800 mb-4">📨 Mensajes de tus Grupos</h2>
+              <div className="space-y-3">
+                {messages
+                  .filter(m => currentUser.groupIds.includes(m.groupId))
+                  .sort((a, b) => new Date(b.date) - new Date(a.date))
+                  .map((message, index) => (
+                    <div key={index} className="border border-gray-200 rounded-lg p-4 bg-blue-50">
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <h3 className="font-bold text-gray-800">{message.title}</h3>
+                          <div className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">
+                            {message.content}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-2">
+                            <span className="font-medium">{message.author}</span> • {message.date}
+                          </div>
+                        </div>
+                        <span className="text-blue-500 font-bold text-xl ml-3">📨</span>
+                      </div>
+                    </div>
+                  ))}
+                {messages.filter(m => currentUser.groupIds.includes(m.groupId)).length === 0 && (
+                  <div className="text-center py-4 text-gray-500">
+                    No hay mensajes para tus grupos.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {/* <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< */}
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Available exams */}
             <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100">
@@ -3175,69 +3458,12 @@ const exportResults = () => {
               )}
             </div>
           </div>
-          {/* Change Password Modal for Student */}
-          {showChangePassword && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-              <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-bold text-gray-800">🔑 Cambiar Contraseña</h3>
-                  <button onClick={() => setShowChangePassword(false)} className="text-gray-500 hover:text-gray-700">
-                    ✕
-                  </button>
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña Actual</label>
-                    <input
-                      type="password"
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Ingrese su contraseña actual"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nueva Contraseña</label>
-                    <input
-                      type="password"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Ingrese la nueva contraseña"
-                    />
-                  </div>
-                  <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
-                    <motion.button
-                      onClick={() => {
-                        setShowChangePassword(false);
-                        setCurrentPassword('');
-                        setNewPassword('');
-                      }}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-                    >
-                      Cancelar
-                    </motion.button>
-                    <motion.button
-                      onClick={handleChangePassword}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                      Guardar Cambios
-                    </motion.button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     );
   };
 
-  // Login page
+  // Login page - ESTRUCTURA CORREGIDA Y VALIDADA
   const renderLoginPage = () => (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
@@ -3297,201 +3523,197 @@ const exportResults = () => {
               <div>
                 <motion.button
                   onClick={() => handleLogin('admin')}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Ingresar como Admin
-                </motion.button>
-              </div>
-            </div>
-          </div>
-          {/* Student Login */}
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-              <span className="mr-2">🎓</span> Alumno
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="student-dni" className="block text-sm font-medium text-gray-700">
-                  DNI
-                </label>
-                <div className="mt-1">
-                  <input
-                    id="student-dni"
-                    type="text"
-                    value={studentDni}
-                    onChange={(e) => setStudentDni(e.target.value)}
-                    className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Ingrese su DNI"
-                  />
-                </div>
-              </div>
-              <div>
-                <label htmlFor="student-password" className="block text-sm font-medium text-gray-700">
-                  Contraseña
-                </label>
-                <div className="mt-1">
-                  <input
-                    id="student-password"
-                    type="password"
-                    value={studentPass}
-                    onChange={(e) => setStudentPass(e.target.value)}
-                    className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="••••••••"
-                  />
-                </div>
-              </div>
-              {loginError && (
-                <div className="text-red-500 text-sm bg-red-50 p-2 rounded-md border border-red-200">
-                  {loginError}
-                </div>
-              )}
-              <div>
-                <motion.button
-                  onClick={() => handleLogin('student')}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                  Ingresar como Alumno
-                </motion.button>
-              </div>
-            </div>
-          </div>
-          {/* Register Link */}
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-600">
-              ¿No tenés cuenta?{" "}
-              <button
-                onClick={() => setShowRegister(true)}
-                className="font-medium text-blue-600 hover:text-blue-500"
-              >
-                Registrarte aquí
-              </button>
-            </p>
-          </div>
-        </div>
-      </div>
-      {/* Register Modal */}
-      {showRegister && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold text-gray-800">Registro de Estudiante</h3>
-              <button onClick={() => setShowRegister(false)} className="text-gray-500 hover:text-gray-700">
-                ✕
-              </button>
-            </div>
-            <p className="text-gray-600 mb-6">Completá los datos para registrarte. Un administrador deberá aprobar tu cuenta antes de poder ingresar.</p>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
-                  <input
-                    type="text"
-                    value={registerName}
-                    onChange={(e) => setRegisterName(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Tu nombre"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Apellido</label>
-                  <input
-                    type="text"
-                    value={registerLastName}
-                    onChange={(e) => setRegisterLastName(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Tu apellido"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">DNI (solo números)</label>
-                <input
-                  type="text"
-                  value={registerDni}
-                  onChange={(e) => setRegisterDni(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Tu DNI"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
-                <input
-                  type="password"
-                  value={registerPass}
-                  onChange={(e) => setRegisterPass(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Tu contraseña"
-                />
-              </div>
-              <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
-                <motion.button
-                  onClick={() => setShowRegister(false)}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  ← Volver al login
-                </motion.button>
-                <motion.button
-                  onClick={handleRegister}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                >
-                  Registrarse
-                </motion.button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  // Main render
-  if (currentPage === 'login') {
-    return renderLoginPage();
-  }
-  if (currentPage === 'admin' && isLoggedIn && userRole === 'admin') {
-    return (
-      <>
-        <div className="flex min-h-screen bg-gray-50">
-          {renderAdminSidebar()}
-          <div className="flex-1">
-            <header className="bg-white shadow-sm">
-              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-                <h1 className="text-2xl font-bold text-gray-800">ExamProm</h1>
-                <div className="flex items-center">
-                  <div className="mr-4 text-right">
-                    <div className="font-medium text-gray-800">{currentUser?.name}</div>
-                    <div className="text-xs text-gray-500">Administrador</div>
-                  </div>
-                  <motion.button
-                    onClick={handleLogout}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
-                  >
-                    <span className="mr-2">🚪</span> Salir
-                  </motion.button>
-                </div>
-              </div>
-            </header>
-            <main>
-              {renderAdminSection()}
-            </main>
-          </div>
-        </div>
-        <Footer />
-      </>
-    );
-  }
-  if (currentPage === 'student' && isLoggedIn && userRole === 'student') {
-    return renderStudentDashboard();
-  }
-  return renderLoginPage();
+whileHover={{ scale: 1.02 }}
+whileTap={{ scale: 0.98 }}
+className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+>
+Ingresar como Admin
+</motion.button>
+</div>
+</div>
+</div>
+{/* Student Login */}
+<div>
+<h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+<span className="mr-2">🎓</span> Alumno
+</h3>
+<div className="space-y-4">
+<div>
+<label htmlFor="student-dni" className="block text-sm font-medium text-gray-700">
+DNI
+</label>
+<div className="mt-1">
+<input
+id="student-dni"
+type="text"
+value={studentDni}
+onChange={(e) => setStudentDni(e.target.value)}
+className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+placeholder="Ingrese su DNI"
+/>
+</div>
+</div>
+<div>
+<label htmlFor="student-password" className="block text-sm font-medium text-gray-700">
+Contraseña
+</label>
+<div className="mt-1">
+<input
+id="student-password"
+type="password"
+value={studentPass}
+onChange={(e) => setStudentPass(e.target.value)}
+className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+placeholder="••••••••"
+/>
+</div>
+</div>
+{loginError && (
+<div className="text-red-500 text-sm bg-red-50 p-2 rounded-md border border-red-200">
+{loginError}
+</div>
+)}
+<div>
+<motion.button
+onClick={() => handleLogin('student')}
+whileHover={{ scale: 1.02 }}
+whileTap={{ scale: 0.98 }}
+className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+>
+Ingresar como Alumno
+</motion.button>
+</div>
+</div>
+</div>
+{/* Register Link */}
+<div className="mt-6 text-center">
+<p className="text-sm text-gray-600">
+¿No tenés cuenta?{" "}
+<button
+onClick={() => setShowRegister(true)}
+className="font-medium text-blue-600 hover:text-blue-500"
+>
+Registrarte aquí
+</button>
+</p>
+</div>
+</div>
+</div>
+{/* Register Modal */}
+{showRegister && (
+<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+<div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+<div className="flex justify-between items-center mb-4">
+<h3 className="text-xl font-bold text-gray-800">Registro de Estudiante</h3>
+<button onClick={() => setShowRegister(false)} className="text-gray-500 hover:text-gray-700">
+✕
+</button>
+</div>
+<p className="text-gray-600 mb-6">Completá los datos para registrarte. Un administrador deberá aprobar tu cuenta antes de poder ingresar.</p>
+<div className="space-y-4">
+<div className="grid grid-cols-2 gap-4">
+<div>
+<label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+<input
+type="text"
+value={registerName}
+onChange={(e) => setRegisterName(e.target.value)}
+className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+placeholder="Tu nombre"
+/>
+</div>
+<div>
+<label className="block text-sm font-medium text-gray-700 mb-1">Apellido</label>
+<input
+type="text"
+value={registerLastName}
+onChange={(e) => setRegisterLastName(e.target.value)}
+className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+placeholder="Tu apellido"
+/>
+</div>
+</div>
+<div>
+<label className="block text-sm font-medium text-gray-700 mb-1">DNI (solo números)</label>
+<input
+type="text"
+value={registerDni}
+onChange={(e) => setRegisterDni(e.target.value)}
+className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+placeholder="Tu DNI"
+/>
+</div>
+<div>
+<label className="block text-sm font-medium text-gray-700 mb-1">Contraseña</label>
+<input
+type="password"
+value={registerPass}
+onChange={(e) => setRegisterPass(e.target.value)}
+className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+placeholder="Tu contraseña"
+/>
+</div>
+<div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
+<motion.button
+onClick={() => setShowRegister(false)}
+whileHover={{ scale: 1.05 }}
+whileTap={{ scale: 0.95 }}
+className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+>
+<span className="mr-1">←</span> Volver al login
+</motion.button>
+<motion.button
+onClick={handleRegister}
+whileHover={{ scale: 1.05 }}
+whileTap={{ scale: 0.95 }}
+className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+>
+Registrarse
+</motion.button>
+</div>
+</div>
+</div>
+</div>
+)}
+</div>
+);
+// Main render
+if (currentPage === 'login') {
+return renderLoginPage();
+}
+if (currentPage === 'admin' && isLoggedIn && userRole === 'admin') {
+return (
+<div className="flex min-h-screen bg-gray-50">
+{renderAdminSidebar()}
+<div className="flex-1">
+<header className="bg-white shadow-sm">
+<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+<h1 className="text-2xl font-bold text-gray-800">ExamProm</h1>
+<div className="flex items-center">
+<div className="mr-4 text-right">
+<div className="font-medium text-gray-800">{currentUser?.name}</div>
+<div className="text-xs text-gray-500">Administrador</div>
+</div>
+<motion.button
+onClick={handleLogout}
+whileHover={{ scale: 1.05 }}
+whileTap={{ scale: 0.95 }}
+className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
+>
+<span className="mr-2">🚪</span> Salir
+</motion.button>
+</div>
+</div>
+</header>
+<main>
+{renderAdminSection()}
+</main>
+</div>
+</div>
+);
+}
+if (currentPage === 'student' && isLoggedIn && userRole === 'student') {
+return renderStudentDashboard();
+}
+return renderLoginPage();
 }
