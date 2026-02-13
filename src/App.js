@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import Footer from './components/Footer';
 import { db } from './firebase';
 import {
   collection,
@@ -3682,36 +3683,39 @@ if (currentPage === 'login') {
 return renderLoginPage();
 }
 if (currentPage === 'admin' && isLoggedIn && userRole === 'admin') {
-return (
-<div className="flex min-h-screen bg-gray-50">
-{renderAdminSidebar()}
-<div className="flex-1">
-<header className="bg-white shadow-sm">
-<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-<h1 className="text-2xl font-bold text-gray-800">ExamProm</h1>
-<div className="flex items-center">
-<div className="mr-4 text-right">
-<div className="font-medium text-gray-800">{currentUser?.name}</div>
-<div className="text-xs text-gray-500">Administrador</div>
-</div>
-<motion.button
-onClick={handleLogout}
-whileHover={{ scale: 1.05 }}
-whileTap={{ scale: 0.95 }}
-className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
->
-<span className="mr-2">🚪</span> Salir
-</motion.button>
-</div>
-</div>
-</header>
-<main>
-{renderAdminSection()}
-</main>
-</div>
-</div>
-);
-}
+    return (
+      <>
+        <div className="flex min-h-screen bg-gray-50">
+          {renderAdminSidebar()}
+          <div className="flex-1">
+            <header className="bg-white shadow-sm">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+                <h1 className="text-2xl font-bold text-gray-800">ExamProm</h1>
+                <div className="flex items-center">
+                  <div className="mr-4 text-right">
+                    <div className="font-medium text-gray-800">{currentUser?.name}</div>
+                    <div className="text-xs text-gray-500">Administrador</div>
+                  </div>
+                  <motion.button
+                    onClick={handleLogout}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg flex items-center"
+                  >
+                    <span className="mr-2">🚪</span> Salir
+                  </motion.button>
+                </div>
+              </div>
+            </header>
+            <main>
+              {renderAdminSection()}
+            </main>
+          </div>
+        </div>
+        <Footer />
+      </>
+    );
+  }
 if (currentPage === 'student' && isLoggedIn && userRole === 'student') {
 return renderStudentDashboard();
 }
